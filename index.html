@@ -59,8 +59,11 @@
   }
   .btn-primary{ background:#b8241f; color:#f6ecd9; }
   .btn-primary:hover{ background:#d33a34; }
-  .btn-secondary{ background:#3a2a18; color:#e8c887; border:1px solid #8b5a2b; }
-  .btn-secondary:hover{ background:#4a3520; }
+  .btn-secondary{
+    background:#363430; color:#e8c887; border:1px solid #bcbab7;
+    box-shadow:0 0 5px 0 rgba(135,135,135,0.75);
+  }
+  .btn-secondary:hover{ background:#454135; }
   .hint{ font-size:12px; color:#a8967a; line-height:1.6; }
   .error{ color:#ff8a80; font-size:13px; min-height:16px; }
 
@@ -147,15 +150,15 @@
     background-position: center;
     background-color: transparent;
     border: none;
-    box-shadow: none;
+    box-shadow: 4px 4px 5px rgba(0,0,0,0.4); /* 模式:一般／不透明度:40%／X:4px／Y:4px／模糊:5px */
     color: transparent;
     text-shadow: none;
   }
   .piece.piece-img.selected{
-    box-shadow: 0 0 0 3px #ffb238;
+    box-shadow: 0 0 0 3px #ffb238, 4px 4px 5px rgba(0,0,0,0.4);
   }
   .piece.piece-img.in-check{
-    box-shadow: 0 0 0 3px #ff3b30;
+    box-shadow: 0 0 0 3px #ff3b30, 4px 4px 5px rgba(0,0,0,0.4);
   }
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
@@ -695,53 +698,7 @@
   let busy = false;       // 避免同一時間重複寫入
   let pendingMoveAnim = null; // {r1,c1,r2,c2}：下一次 renderGame() 要播放滑動動畫的起訖格子(棋盤座標)
 
-  /* ---------- 音效：用 Web Audio API 即時合成，不需要額外音檔 ---------- */
-  let audioCtx = null;
-  function getAudioCtx(){
-    try{
-      if(!audioCtx){
-        const Ctx = window.AudioContext || window.webkitAudioContext;
-        if(!Ctx) return null;
-        audioCtx = new Ctx();
-      }
-      if(audioCtx.state === 'suspended') audioCtx.resume();
-      return audioCtx;
-    } catch(e){ return null; }
-  }
-  // 瀏覽器通常要求「使用者先手動點過一下」才允許播放音效，所以在頁面上第一次
-  // 點擊時就先把 AudioContext 建立/喚醒起來，之後下棋才能順利發出聲音
-  document.addEventListener('click', () => getAudioCtx(), { once:true });
-
-  function playTone(freq, duration, type, gainPeak, delay){
-    const ctx = getAudioCtx();
-    if(!ctx) return;
-    const t0 = ctx.currentTime + (delay || 0);
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = type || 'triangle';
-    osc.frequency.setValueAtTime(freq, t0);
-    gain.gain.setValueAtTime(0, t0);
-    gain.gain.linearRampToValueAtTime(gainPeak, t0 + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(t0);
-    osc.stop(t0 + duration + 0.03);
-  }
-
-  function playMoveSound(){
-    // 一般走子：短促的單一「叩」聲
-    playTone(560, 0.09, 'triangle', 0.10, 0);
-  }
-  function playCaptureSound(){
-    // 吃子：低沉一點、帶兩段的「喀」聲，聽起來更有重量感
-    playTone(320, 0.08, 'square', 0.11, 0);
-    playTone(190, 0.14, 'square', 0.09, 0.05);
-  }
-  function playMoveOrCaptureSound(isCapture){
-    try{ isCapture ? playCaptureSound() : playMoveSound(); }
-    catch(e){ /* 音效播放失敗不影響下棋本身 */ }
-  }
+  // 音效先移除，等之後有實際音檔再串接（之前是用 Web Audio API 即時合成的暫用音，先拿掉）
 
   function seatLabel(s){
     if(s==='red') return '紅方';
@@ -791,8 +748,6 @@
     const diff = findMoveDiff(board, room.board);
     if(diff){
       pendingMoveAnim = diff;
-      const wasCapture = board[diff.r2][diff.c2] !== '';
-      playMoveOrCaptureSound(wasCapture);
     }
     board = room.board;
     turn = room.turn;
@@ -1058,7 +1013,6 @@
   async function makeMove(sr,sc,tr,tc){
     busy = true;
     pendingMoveAnim = { r1: sr, c1: sc, r2: tr, c2: tc };
-    playMoveOrCaptureSound(board[tr][tc] !== '');
     const nb = cloneBoard(board);
     nb[tr][tc] = nb[sr][sc];
     nb[sr][sc] = '';
