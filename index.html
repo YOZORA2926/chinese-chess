@@ -86,6 +86,7 @@
   .seat-code-note{ color:#a8967a; font-size:12px; text-align:center; max-width:420px; }
 
   .board-scale-outer{
+    position:relative;
     display:flex;
     justify-content:center;
     width:100%;
@@ -166,6 +167,25 @@
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
 
+  /* ---------- 對局結束彈窗（顯示在棋盤正中間） ---------- */
+  .game-over-overlay{
+    display:none;
+    position:absolute; inset:0;
+    background:rgba(0,0,0,0.55);
+    align-items:center; justify-content:center;
+    z-index:50;
+    padding:16px;
+  }
+  .game-over-box{
+    background:#241609; border:1px solid rgba(232,200,135,0.4);
+    border-radius:14px; padding:24px 26px; color:#f6ecd9;
+    text-align:center; display:flex; flex-direction:column; gap:16px; align-items:center;
+    max-width:80%; width:280px;
+    box-shadow:0 12px 34px rgba(0,0,0,0.55);
+  }
+  .game-over-box .game-over-title{ font-size:17px; font-weight:700; color:#ffd479; line-height:1.5; }
+  .game-over-box .game-over-actions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+
   .actions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
   #copy-msg{ font-size:12px; color:#8fdc8f; min-height:14px; }
   #conn-status{ font-size:12px; color:#a8967a; min-height:14px; text-align:center; }
@@ -213,6 +233,12 @@
           <div class="grid" id="grid"></div>
         </div>
         <div class="coord-row" id="coord-bottom"></div>
+      </div>
+      <div class="game-over-overlay" id="game-over-overlay">
+        <div class="game-over-box">
+          <div class="game-over-title" id="game-over-title"></div>
+          <div class="game-over-actions" id="game-over-actions"></div>
+        </div>
       </div>
     </div>
 
@@ -538,6 +564,9 @@
   const svgEl = document.getElementById('grid-svg');
   const boardWrap = document.getElementById('board-wrap');
   const messageEl = document.getElementById('message');
+  const gameOverOverlayEl = document.getElementById('game-over-overlay');
+  const gameOverTitleEl = document.getElementById('game-over-title');
+  const gameOverActionsEl = document.getElementById('game-over-actions');
   const resignBtn = document.getElementById('resign-btn');
   const drawOfferBtn = document.getElementById('draw-offer-btn');
   const restartBtn = document.getElementById('restart-btn');
@@ -682,6 +711,7 @@
   let redIdG = null;      // 目前紅方座位的座位碼（null 代表還沒有人坐）
   let blackIdG = null;    // 目前黑方座位的座位碼（null 代表還沒有人坐）
   let lastDrawOfferBy = null; // 記住上一次看到的求和狀態，避免同一個請求被重複跳出瀏覽器彈窗
+  let dismissedGameOverMessage = null; // 記住玩家已經關掉過的「對局結束」彈窗訊息，避免重新render就又跳出來
 
   // 音效先移除，等之後有實際音檔再串接（之前是用 Web Audio API 即時合成的暫用音，先拿掉）
 
@@ -896,6 +926,8 @@
     resignBtn.style.display = (isPlayer && !gameOver) ? 'inline-block' : 'none';
     drawOfferBtn.style.display = (isPlayer && !gameOver && !drawOfferBy) ? 'inline-block' : 'none';
 
+    renderGameOverPopup(isPlayer);
+
     // 黑方玩家看到的畫面要上下左右都翻轉過來，讓自己的棋子永遠在畫面下方
     const flipped = (mySeat === 'black');
     renderCoordLabels(flipped);
@@ -939,6 +971,37 @@
         gridEl.appendChild(cell);
       }
     }
+  }
+
+  // 對局結束時，在棋盤正中間跳出一個彈窗顯示結果（將死／認輸／求和等）。
+  // 玩家可以按「關閉」把彈窗收起來（只是本機隱藏，不影響房間狀態），
+  // 同一個結果訊息只會自動跳出一次，關閉後除非又開新的一局，不會再跳出來。
+  function renderGameOverPopup(isPlayer){
+    if(!gameOver || !message || dismissedGameOverMessage === message){
+      gameOverOverlayEl.style.display = 'none';
+      return;
+    }
+    gameOverTitleEl.textContent = message;
+    gameOverActionsEl.innerHTML = '';
+
+    if(isPlayer){
+      const restartBtnInPopup = document.createElement('button');
+      restartBtnInPopup.className = 'btn btn-primary';
+      restartBtnInPopup.textContent = '重新開始一局';
+      restartBtnInPopup.addEventListener('click', () => restartBtn.click());
+      gameOverActionsEl.appendChild(restartBtnInPopup);
+    }
+
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'btn btn-secondary';
+    closeBtn.textContent = '關閉';
+    closeBtn.addEventListener('click', () => {
+      dismissedGameOverMessage = message;
+      gameOverOverlayEl.style.display = 'none';
+    });
+    gameOverActionsEl.appendChild(closeBtn);
+
+    gameOverOverlayEl.style.display = 'flex';
   }
 
   async function respondToDrawOffer(newValue){
