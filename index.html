@@ -64,10 +64,8 @@
   .btn-primary:hover{ background:#d33a34; }
   .btn-secondary{
     background:#363430; color:#e8c887; border:1px solid #bcbab7;
-    box-shadow:4px 4px 5px rgba(0,0,0,0.4), 0 0 5px 0 rgba(135,135,135,0.75);
   }
   .btn-secondary:hover{ background:#454135; }
-  #lobby-view .btn{ box-shadow:none; } /* 登入頁按鈕先不用外光暈 */
   .hint{ font-size:12px; color:#a8967a; line-height:1.6; }
   .error{ color:#ff8a80; font-size:13px; min-height:16px; }
 
@@ -105,7 +103,7 @@
     -webkit-backface-visibility: hidden;
     backface-visibility: hidden;
   }
-  .board.disabled{ filter:grayscale(0.15) brightness(0.92); }
+  .board.disabled{ filter:grayscale(0.15) brightness(0.92); pointer-events:none; }
   .coord-row{ display:flex; }
   .coord-row span{
     display:flex; align-items:center; justify-content:center;
@@ -167,25 +165,6 @@
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
 
-  /* ---------- 統一彈窗（求和 / 認輸確認 共用同一套樣式） ---------- */
-  .modal-overlay{
-    display:none;
-    position:fixed; inset:0;
-    background:rgba(0,0,0,0.55);
-    align-items:center; justify-content:center;
-    z-index:1000;
-    padding:20px;
-  }
-  .modal-box{
-    background:#241609; border:1px solid rgba(232,200,135,0.4);
-    border-radius:14px; padding:22px 24px; color:#f6ecd9; font-size:15px;
-    text-align:center; display:flex; flex-direction:column; gap:14px; align-items:center;
-    max-width:320px; width:100%;
-    box-shadow:0 12px 34px rgba(0,0,0,0.55);
-  }
-  .modal-box .modal-actions{ display:flex; gap:8px; }
-  .modal-box button{ padding:6px 16px; font-size:13px; }
-
   .actions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
   #copy-msg{ font-size:12px; color:#8fdc8f; min-height:14px; }
   #conn-status{ font-size:12px; color:#a8967a; min-height:14px; text-align:center; }
@@ -237,16 +216,6 @@
     </div>
 
     <div class="message" id="message"></div>
-
-    <!-- 求和彈窗 -->
-    <div class="modal-overlay" id="draw-banner-overlay">
-      <div class="modal-box" id="draw-banner"></div>
-    </div>
-
-    <!-- 認輸確認彈窗（跟求和彈窗共用同一套 .modal-overlay / .modal-box 樣式） -->
-    <div class="modal-overlay" id="confirm-overlay">
-      <div class="modal-box" id="confirm-box"></div>
-    </div>
 
     <div class="actions">
       <button class="btn btn-secondary" id="resign-btn">認輸</button>
@@ -568,10 +537,6 @@
   const svgEl = document.getElementById('grid-svg');
   const boardWrap = document.getElementById('board-wrap');
   const messageEl = document.getElementById('message');
-  const drawBannerOverlayEl = document.getElementById('draw-banner-overlay');
-  const drawBannerEl = document.getElementById('draw-banner');
-  const confirmOverlayEl = document.getElementById('confirm-overlay');
-  const confirmBoxEl = document.getElementById('confirm-box');
   const resignBtn = document.getElementById('resign-btn');
   const drawOfferBtn = document.getElementById('draw-offer-btn');
   const restartBtn = document.getElementById('restart-btn');
@@ -713,6 +678,9 @@
   let unsubscribeRoom = null; // Firestore 即時監聽的取消函式
   let busy = false;       // 避免同一時間重複寫入
   let pendingMoveAnim = null; // {r1,c1,r2,c2}：下一次 renderGame() 要播放滑動動畫的起訖格子(棋盤座標)
+  let redIdG = null;      // 目前紅方座位的座位碼（null 代表還沒有人坐）
+  let blackIdG = null;    // 目前黑方座位的座位碼（null 代表還沒有人坐）
+  let lastDrawOfferBy = null; // 記住上一次看到的求和狀態，避免同一個請求被重複跳出瀏覽器彈窗
 
   // 音效先移除，等之後有實際音檔再串接（之前是用 Web Audio API 即時合成的暫用音，先拿掉）
 
@@ -722,32 +690,8 @@
     return '－';
   }
 
-  /* ---------- 統一的確認彈窗（認輸確認 / 求和 都走這一套 .modal-overlay / .modal-box） ---------- */
-  // 簡單的「純文字 + 按鈕列」彈窗，用於認輸確認這種一次性、不需要跟房間狀態同步的情境
-  function showConfirmModal(text, buttons){
-    confirmBoxEl.innerHTML = '';
-    const p = document.createElement('div');
-    p.textContent = text;
-    confirmBoxEl.appendChild(p);
-
-    const actions = document.createElement('div');
-    actions.className = 'modal-actions';
-    for(const btnDef of buttons){
-      const btn = document.createElement('button');
-      btn.className = 'btn ' + (btnDef.primary ? 'btn-primary' : 'btn-secondary');
-      btn.textContent = btnDef.label;
-      btn.addEventListener('click', () => {
-        hideConfirmModal();
-        if(btnDef.onClick) btnDef.onClick();
-      });
-      actions.appendChild(btn);
-    }
-    confirmBoxEl.appendChild(actions);
-    confirmOverlayEl.style.display = 'flex';
-  }
-  function hideConfirmModal(){
-    confirmOverlayEl.style.display = 'none';
-    confirmBoxEl.innerHTML = '';
+  function bothSeated(){
+    return !!(redIdG && blackIdG);
   }
 
   // 比較舊盤面與新盤面，找出唯一一步棋的起點/終點（差異剛好兩格時才算，
@@ -798,6 +742,8 @@
     gameOver = room.gameOver;
     message = room.message || '';
     drawOfferBy = room.drawOfferBy || null;
+    redIdG = room.redId || null;
+    blackIdG = room.blackId || null;
     if(room.redId === myId) mySeat = 'red';
     else if(room.blackId === myId) mySeat = 'black';
     else {
@@ -810,7 +756,20 @@
       return;
     }
     selected = null;
+    maybeShowDrawOfferDialog();
     renderGame();
+  }
+
+  // 用瀏覽器原生彈窗詢問是否同意求和。只在「對方剛送出新的求和請求」那一刻跳出，
+  // 避免每次 Firestore 快照更新都重複跳窗。
+  function maybeShowDrawOfferDialog(){
+    const isPlayer = (mySeat === 'red' || mySeat === 'black');
+    const isNewIncomingOffer = isPlayer && !gameOver && drawOfferBy && drawOfferBy !== mySeat && drawOfferBy !== lastDrawOfferBy;
+    lastDrawOfferBy = drawOfferBy;
+    if(!isNewIncomingOffer) return;
+    const accepted = window.confirm(`${seatLabel(drawOfferBy)}提出求和，是否同意？`);
+    if(accepted) acceptDrawOffer();
+    else respondToDrawOffer(null);
   }
 
   async function attemptJoin(){
@@ -874,6 +833,10 @@
     myId = candidateId;
     mySeat = assignedSeat;
     board = room.board; turn = room.turn; gameOver = room.gameOver; message = room.message || '';
+    redIdG = room.redId || null;
+    blackIdG = room.blackId || null;
+    drawOfferBy = room.drawOfferBy || null;
+    lastDrawOfferBy = drawOfferBy;
     selected = null;
 
     joinBtn.disabled = false;
@@ -911,22 +874,26 @@
   function renderGame(){
     seatBadge.textContent = '你是：' + seatLabel(mySeat);
     turnDotEl.className = 'turn-dot ' + turn;
-    const canAct = (mySeat === turn) && !gameOver;
+    const waitingForOpponent = !bothSeated();
+    const canAct = (mySeat === turn) && !gameOver && !waitingForOpponent;
     boardWrap.classList.toggle('disabled', !canAct);
 
-    let turnLine = (turn==='red' ? '紅方回合' : '黑方回合');
-    if(isInCheck(board, turn)) turnLine += '（將軍！）';
-    if(!gameOver) turnLine += (mySeat === turn ? '（換你了）' : '（等待對方）');
+    let turnLine;
+    if(waitingForOpponent){
+      turnLine = '等待對手加入...';
+    } else {
+      turnLine = (turn==='red' ? '紅方回合' : '黑方回合');
+      if(isInCheck(board, turn)) turnLine += '（將軍！）';
+      if(!gameOver) turnLine += (mySeat === turn ? '（換你了）' : '（等待對方）');
+    }
     turnTextEl.textContent = turnLine;
 
     messageEl.textContent = message || '';
     restartBtn.style.display = (gameOver && (mySeat==='red'||mySeat==='black')) ? 'inline-block' : 'none';
 
     const isPlayer = (mySeat === 'red' || mySeat === 'black');
-    resignBtn.style.display = (isPlayer && !gameOver) ? 'inline-block' : 'none';
-    drawOfferBtn.style.display = (isPlayer && !gameOver && !drawOfferBy) ? 'inline-block' : 'none';
-
-    renderDrawBanner();
+    resignBtn.style.display = (isPlayer && !gameOver && !waitingForOpponent) ? 'inline-block' : 'none';
+    drawOfferBtn.style.display = (isPlayer && !gameOver && !waitingForOpponent && !drawOfferBy) ? 'inline-block' : 'none';
 
     // 黑方玩家看到的畫面要上下左右都翻轉過來，讓自己的棋子永遠在畫面下方
     const flipped = (mySeat === 'black');
@@ -973,48 +940,6 @@
     }
   }
 
-  function renderDrawBanner(){
-    const isPlayer = (mySeat === 'red' || mySeat === 'black');
-    if(gameOver || !isPlayer || !drawOfferBy){
-      drawBannerOverlayEl.style.display = 'none';
-      drawBannerEl.innerHTML = '';
-      return;
-    }
-    drawBannerOverlayEl.style.display = 'flex';
-    if(drawOfferBy === mySeat){
-      drawBannerEl.innerHTML = '';
-      const p = document.createElement('div');
-      p.textContent = '已送出求和請求，等待對方回應...';
-      drawBannerEl.appendChild(p);
-      const actions = document.createElement('div');
-      actions.className = 'modal-actions';
-      const cancelBtn = document.createElement('button');
-      cancelBtn.className = 'btn btn-secondary';
-      cancelBtn.textContent = '取消求和';
-      cancelBtn.addEventListener('click', () => respondToDrawOffer(null));
-      actions.appendChild(cancelBtn);
-      drawBannerEl.appendChild(actions);
-    } else {
-      drawBannerEl.innerHTML = '';
-      const p = document.createElement('div');
-      p.textContent = `${seatLabel(drawOfferBy)}提出求和，是否同意？`;
-      drawBannerEl.appendChild(p);
-      const actions = document.createElement('div');
-      actions.className = 'modal-actions';
-      const acceptBtn = document.createElement('button');
-      acceptBtn.className = 'btn btn-primary';
-      acceptBtn.textContent = '同意求和';
-      acceptBtn.addEventListener('click', () => acceptDrawOffer());
-      const declineBtn = document.createElement('button');
-      declineBtn.className = 'btn btn-secondary';
-      declineBtn.textContent = '拒絕';
-      declineBtn.addEventListener('click', () => respondToDrawOffer(null));
-      actions.appendChild(acceptBtn);
-      actions.appendChild(declineBtn);
-      drawBannerEl.appendChild(actions);
-    }
-  }
-
   async function respondToDrawOffer(newValue){
     busy = true;
     const room = (await getRoom(roomCode)) || freshRoomState();
@@ -1039,6 +964,7 @@
 
   function onCellClick(r,c){
     if(gameOver) return;
+    if(!bothSeated()) return; // 對手還沒加入，不能動子
     if(mySeat !== turn) return; // 不是你的回合就不能動子
     const p = board[r][c];
 
@@ -1102,28 +1028,22 @@
     applyRoomToLocal(room);
   });
 
-  resignBtn.addEventListener('click', () => {
+  resignBtn.addEventListener('click', async () => {
     if(mySeat !== 'red' && mySeat !== 'black') return;
     if(gameOver) return;
-    showConfirmModal('確定要認輸嗎？認輸後這局就結束了。', [
-      {
-        label: '確定認輸',
-        primary: true,
-        onClick: async () => {
-          busy = true;
-          const winner = mySeat === 'red' ? 'black' : 'red';
-          const room = (await getRoom(roomCode)) || freshRoomState();
-          room.gameOver = true;
-          room.message = `${seatLabel(mySeat)}認輸，${seatLabel(winner)}獲勝！`;
-          room.drawOfferBy = null;
-          await setRoom(roomCode, room);
-          gameOver = true; message = room.message; drawOfferBy = null;
-          busy = false;
-          renderGame();
-        }
-      },
-      { label: '取消', primary: false }
-    ]);
+    const confirmResign = window.confirm('確定要認輸嗎？認輸後這局就結束了。');
+    if(!confirmResign) return;
+    busy = true;
+    const winner = mySeat === 'red' ? 'black' : 'red';
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.gameOver = true;
+    room.message = `${seatLabel(mySeat)}認輸，${seatLabel(winner)}獲勝！`;
+    room.drawOfferBy = null;
+    await setRoom(roomCode, room);
+    gameOver = true; message = room.message; drawOfferBy = null;
+    lastDrawOfferBy = null;
+    busy = false;
+    renderGame();
   });
 
   drawOfferBtn.addEventListener('click', async () => {
@@ -1134,8 +1054,10 @@
     room.drawOfferBy = mySeat;
     await setRoom(roomCode, room);
     drawOfferBy = mySeat;
+    lastDrawOfferBy = mySeat;
     busy = false;
     renderGame();
+    window.alert('已送出求和請求，等待對方回應...');
   });
 
   leaveBtn.addEventListener('click', async () => {
@@ -1146,6 +1068,7 @@
         // 只清空自己的座位，空出一個名額給下一位加入者，對方仍可繼續留在房間
         if(mySeat === 'red' && room.redId === myId) room.redId = null;
         if(mySeat === 'black' && room.blackId === myId) room.blackId = null;
+        room.drawOfferBy = null; // 有人離開就取消任何進行中的求和請求，避免對方畫面卡在舊的求和彈窗
         await setRoom(roomCode, room);
       }
       busy = false;
