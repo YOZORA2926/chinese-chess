@@ -220,6 +220,7 @@
     <div class="status-bar">
       <span class="badge" id="room-badge">房間 ----</span>
       <span class="badge" id="seat-badge">你是：－</span>
+      <span class="badge" id="opponent-status">對手：－</span>
       <span class="turn-dot" id="turn-dot"></span>
       <span id="turn-text">紅方回合</span>
     </div>
@@ -266,6 +267,9 @@
   import {
     getFirestore, doc, getDoc, setDoc, onSnapshot, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+  import {
+    getDatabase, ref, onValue, onDisconnect, set, serverTimestamp, off
+  } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBP7t-6-ytdr8qJd_yv6iZjuqtsZ9urc0w",
@@ -274,10 +278,12 @@
     storageBucket: "chinese-chess-90a20.firebasestorage.app",
     messagingSenderId: "952241228752",
     appId: "1:952241228752:web:9ebf4401c2545a901947d5",
-    measurementId: "G-LB2JFM9999"
+    measurementId: "G-LB2JFM9999",
+    databaseURL: "https://chinese-chess-90a20-default-rtdb.asia-southeast1.firebasedatabase.app"
   };
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
+  const rtdb = getDatabase(app);
   const ROOMS_COLLECTION = 'xiangqiRooms';
 
   /* =========================================================
@@ -557,6 +563,7 @@
 
   const roomBadge = document.getElementById('room-badge');
   const seatBadge = document.getElementById('seat-badge');
+  const opponentStatusEl = document.getElementById('opponent-status');
   const turnDotEl = document.getElementById('turn-dot');
   const turnTextEl = document.getElementById('turn-text');
   const seatCodeNote = document.getElementById('seat-code-note');
@@ -713,6 +720,12 @@
   let lastDrawOfferBy = null; // 記住上一次看到的求和狀態，避免同一個請求被重複跳出瀏覽器彈窗
   let dismissedGameOverMessage = null; // 記住玩家已經關掉過的「對局結束」彈窗訊息，避免重新render就又跳出來
 
+  // ---------- Presence（RTDB）相關狀態 ----------
+  let presenceRef = null;                 // 自己在 RTDB 裡的 presence 節點參照
+  let opponentPresenceRef = null;         // 對手的 presence 節點參照
+  let opponentOnline = false;             // 對手目前是否在線
+  let unsubscribeOpponentPresence = null; // 監聽對手 presence 的取消函式
+
   // 音效先移除，等之後有實際音檔再串接（之前是用 Web Audio API 即時合成的暫用音，先拿掉）
 
   function seatLabel(s){
@@ -723,6 +736,50 @@
 
   function bothSeated(){
     return !!(redIdG && blackIdG);
+  }
+
+  function opponentSeat(){
+    if(mySeat === 'red') return 'black';
+    if(mySeat === 'black') return 'red';
+    return null;
+  }
+
+  // 建立／重建 presence 連線：自己標記為 online，並監聽對手座位的 online 狀態。
+  // 用 onDisconnect 讓斷線（關分頁、斷網、瀏覽器崩潰）時由 RTDB 伺服器端自動
+  // 幫我們寫成 offline，不需要客戶端自己善後。
+  function setupPresence(){
+    teardownPresence();
+    if(!roomCode || !myId || !mySeat) return;
+
+    presenceRef = ref(rtdb, `presence/${roomCode}/${mySeat}`);
+    onDisconnect(presenceRef).set({ online: false, seatId: myId, lastSeen: serverTimestamp() })
+      .then(() => set(presenceRef, { online: true, seatId: myId, lastSeen: serverTimestamp() }))
+      .catch((e) => console.error('設定 presence 失敗', e));
+
+    const oppSeat = opponentSeat();
+    if(!oppSeat) return;
+    opponentPresenceRef = ref(rtdb, `presence/${roomCode}/${oppSeat}`);
+    unsubscribeOpponentPresence = onValue(opponentPresenceRef, (snap) => {
+      const data = snap.val();
+      // 只有座位碼跟房間裡記錄的對手座位碼一致，且 online 為 true，才算真的在線，
+      // 避免上一位坐過這個位置又離開的人殘留的 presence 誤判成「對手在線」
+      const expectedSeatId = oppSeat === 'red' ? redIdG : blackIdG;
+      opponentOnline = !!(data && data.online && (!expectedSeatId || data.seatId === expectedSeatId));
+      renderGame();
+    });
+  }
+
+  function teardownPresence(){
+    if(unsubscribeOpponentPresence && opponentPresenceRef){
+      off(opponentPresenceRef);
+      unsubscribeOpponentPresence = null;
+    }
+    opponentPresenceRef = null;
+    if(presenceRef){
+      set(presenceRef, { online: false, seatId: myId, lastSeen: serverTimestamp() }).catch(()=>{});
+      presenceRef = null;
+    }
+    opponentOnline = false;
   }
 
   // 比較舊盤面與新盤面，找出唯一一步棋的起點/終點（差異剛好兩格時才算，
@@ -775,10 +832,12 @@
     drawOfferBy = room.drawOfferBy || null;
     redIdG = room.redId || null;
     blackIdG = room.blackId || null;
+    const prevSeat = mySeat;
     if(room.redId === myId) mySeat = 'red';
     else if(room.blackId === myId) mySeat = 'black';
     else {
       // 我的座位已經不在房間裡了（可能被清除），退回大廳
+      teardownPresence();
       stopListening();
       roomCode = null; myId = null; mySeat = null; selected = null;
       gameView.style.display = 'none';
@@ -786,6 +845,7 @@
       lobbyError.textContent = '你已離開這個房間。';
       return;
     }
+    if(mySeat !== prevSeat) setupPresence(); // 座位變動（例如剛搶到空位）時要重新指向對手座位
     selected = null;
     maybeShowDrawOfferDialog();
     renderGame();
@@ -881,6 +941,7 @@
 
     renderGame();
     startListening();
+    setupPresence();
     requestAnimationFrame(fitBoard);
   }
 
@@ -904,6 +965,10 @@
 
   function renderGame(){
     seatBadge.textContent = '你是：' + seatLabel(mySeat);
+    if(opponentStatusEl){
+      if(!bothSeated()) opponentStatusEl.textContent = '對手：尚未加入';
+      else opponentStatusEl.textContent = opponentOnline ? '對手：在線 🟢' : '對手：離線 🔴';
+    }
     turnDotEl.className = 'turn-dot ' + turn;
     const waitingForOpponent = !bothSeated();
     const canAct = (mySeat === turn) && !gameOver && !waitingForOpponent;
@@ -1139,6 +1204,7 @@
       }
       busy = false;
     }
+    teardownPresence();
     stopListening();
     roomCode = null; myId = null; mySeat = null; selected = null;
     gameView.style.display = 'none';
@@ -1192,6 +1258,14 @@
   joinBtn.addEventListener('click', attemptJoin);
   roomCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
   seatCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
+
+  // 頁面關閉前，盡力把自己的 presence 標記為離線（onDisconnect 已能涵蓋大多數
+  // 斷線情境，這裡加一層保險，讓正常關閉分頁時能更快反映在對手畫面上）
+  window.addEventListener('beforeunload', () => {
+    if(presenceRef && myId){
+      set(presenceRef, { online: false, seatId: myId, lastSeen: serverTimestamp() }).catch(()=>{});
+    }
+  });
 </script>
 </body>
 </html>
