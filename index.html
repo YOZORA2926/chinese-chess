@@ -39,34 +39,43 @@
     background:rgba(0,0,0,0.35);
     border:1px solid rgba(232,200,135,0.3);
     border-radius:16px;
-    padding:26px 24px;
+    padding:20px 20px;
     width:100%;
-    max-width:320px;
-    display:flex; flex-direction:column; gap:14px;
+    max-width:300px;
+    display:flex; flex-direction:column; gap:11px;
     color:#f6ecd9;
+    box-shadow:0 0 5px 0 rgba(135,135,135,0.75);
   }
-  .lobby-card label{ font-size:14px; color:#e8c887; letter-spacing:2px; }
+  .lobby-card label{ font-size:13px; color:#999999; letter-spacing:1px; }
+  .lobby-card label .label-note{ font-size:10px; color:#888888; letter-spacing:0; white-space:nowrap; }
   .lobby-card input{
-    width:100%; padding:10px 12px; border-radius:8px; border:1px solid #6f6d68;
+    width:100%; padding:9px 12px; border-radius:8px; border:1px solid #6f6d68;
     background:#2b2a27; color:#f6ecd9; font-size:16px; letter-spacing:3px;
     font-family:inherit; text-align:center;
   }
+  #seat-code-input{ box-shadow:0 0 5px 0 rgba(135,135,135,0.75); }
   .lobby-card input::placeholder{ color:#8f8d88; opacity:1; }
   .lobby-card input::-webkit-input-placeholder{ color:#8f8d88; opacity:1; }
   .lobby-card input::-moz-placeholder{ color:#8f8d88; opacity:1; }
   .row{ display:flex; gap:8px; }
   .row input{ flex:1; }
+  .row.row-align-end{ align-items:flex-end; }
+  .field-col{ display:flex; flex-direction:column; gap:6px; flex:1; }
+  .field-label-center{ text-align:center; }
   .btn{
     border:none; border-radius:999px; cursor:pointer; letter-spacing:2px;
     font-family:inherit; font-size:14px; padding:10px 18px;
+    display:inline-flex; align-items:center; justify-content:center; text-align:center;
   }
-  .btn-primary{ background:#b8241f; color:#f6ecd9; }
+  .btn-primary{ background:#c91c56; color:#efecea; border:1px solid #efefef; box-shadow:0 0 5px 0 rgba(135,135,135,0.75); }
   .btn-primary:hover{ background:#d33a34; }
+  #join-btn{ align-self:center; width:80%; border-radius:22px; }
   .btn-secondary{
-    background:#363430; color:#e8c887; border:1px solid #bcbab7;
+    background:#363430; color:#c9caca; border:1px solid #bcbab7;
+    box-shadow:0 0 5px 0 rgba(135,135,135,0.75);
   }
   .btn-secondary:hover{ background:#454135; }
-  .hint{ font-size:12px; color:#a8967a; line-height:1.6; }
+  .hint{ font-size:12px; color:#666666; line-height:1.6; }
   .error{ color:#ff8a80; font-size:13px; min-height:16px; }
 
   /* ---------- 對局畫面 ---------- */
@@ -196,14 +205,16 @@
   <!-- ---------- 大廳畫面 ---------- -->
   <div class="lobby-card" id="lobby-view">
     <div>
-      <label>房間代碼</label>
-      <div class="row">
-        <input id="room-code-input" maxlength="6" placeholder="例如 A1B2" autocomplete="off">
+      <div class="row row-align-end">
+        <div class="field-col">
+          <label class="field-label-center">房間代碼</label>
+          <input id="room-code-input" maxlength="6" placeholder="例如 A1B2" autocomplete="off">
+        </div>
         <button class="btn btn-secondary" id="random-code-btn">隨機</button>
       </div>
     </div>
     <div>
-      <label>座位碼（重新整理頁面想拿回座位才需要，第一次留空）</label>
+      <label>座位碼<span class="label-note">（重新整理頁面想拿回座位才需要，第一次留空）</span></label>
       <input id="seat-code-input" maxlength="8" placeholder="沒有就留空" autocomplete="off">
     </div>
     <button class="btn btn-primary" id="join-btn">加入 / 建立房間</button>
@@ -220,7 +231,6 @@
     <div class="status-bar">
       <span class="badge" id="room-badge">房間 ----</span>
       <span class="badge" id="seat-badge">你是：－</span>
-      <span class="badge" id="opponent-status">對手：－</span>
       <span class="turn-dot" id="turn-dot"></span>
       <span id="turn-text">紅方回合</span>
     </div>
@@ -267,9 +277,6 @@
   import {
     getFirestore, doc, getDoc, setDoc, onSnapshot, runTransaction
   } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
-  import {
-    getDatabase, ref, onValue, onDisconnect, set, serverTimestamp, off
-  } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-database.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyBP7t-6-ytdr8qJd_yv6iZjuqtsZ9urc0w",
@@ -278,12 +285,10 @@
     storageBucket: "chinese-chess-90a20.firebasestorage.app",
     messagingSenderId: "952241228752",
     appId: "1:952241228752:web:9ebf4401c2545a901947d5",
-    measurementId: "G-LB2JFM9999",
-    databaseURL: "https://chinese-chess-90a20-default-rtdb.asia-southeast1.firebasedatabase.app"
+    measurementId: "G-LB2JFM9999"
   };
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
-  const rtdb = getDatabase(app);
   const ROOMS_COLLECTION = 'xiangqiRooms';
 
   /* =========================================================
@@ -563,7 +568,6 @@
 
   const roomBadge = document.getElementById('room-badge');
   const seatBadge = document.getElementById('seat-badge');
-  const opponentStatusEl = document.getElementById('opponent-status');
   const turnDotEl = document.getElementById('turn-dot');
   const turnTextEl = document.getElementById('turn-text');
   const seatCodeNote = document.getElementById('seat-code-note');
@@ -720,12 +724,6 @@
   let lastDrawOfferBy = null; // 記住上一次看到的求和狀態，避免同一個請求被重複跳出瀏覽器彈窗
   let dismissedGameOverMessage = null; // 記住玩家已經關掉過的「對局結束」彈窗訊息，避免重新render就又跳出來
 
-  // ---------- Presence（RTDB）相關狀態 ----------
-  let presenceRef = null;                 // 自己在 RTDB 裡的 presence 節點參照
-  let opponentPresenceRef = null;         // 對手的 presence 節點參照
-  let opponentOnline = false;             // 對手目前是否在線
-  let unsubscribeOpponentPresence = null; // 監聽對手 presence 的取消函式
-
   // 音效先移除，等之後有實際音檔再串接（之前是用 Web Audio API 即時合成的暫用音，先拿掉）
 
   function seatLabel(s){
@@ -736,50 +734,6 @@
 
   function bothSeated(){
     return !!(redIdG && blackIdG);
-  }
-
-  function opponentSeat(){
-    if(mySeat === 'red') return 'black';
-    if(mySeat === 'black') return 'red';
-    return null;
-  }
-
-  // 建立／重建 presence 連線：自己標記為 online，並監聽對手座位的 online 狀態。
-  // 用 onDisconnect 讓斷線（關分頁、斷網、瀏覽器崩潰）時由 RTDB 伺服器端自動
-  // 幫我們寫成 offline，不需要客戶端自己善後。
-  function setupPresence(){
-    teardownPresence();
-    if(!roomCode || !myId || !mySeat) return;
-
-    presenceRef = ref(rtdb, `presence/${roomCode}/${mySeat}`);
-    onDisconnect(presenceRef).set({ online: false, seatId: myId, lastSeen: serverTimestamp() })
-      .then(() => set(presenceRef, { online: true, seatId: myId, lastSeen: serverTimestamp() }))
-      .catch((e) => console.error('設定 presence 失敗', e));
-
-    const oppSeat = opponentSeat();
-    if(!oppSeat) return;
-    opponentPresenceRef = ref(rtdb, `presence/${roomCode}/${oppSeat}`);
-    unsubscribeOpponentPresence = onValue(opponentPresenceRef, (snap) => {
-      const data = snap.val();
-      // 只有座位碼跟房間裡記錄的對手座位碼一致，且 online 為 true，才算真的在線，
-      // 避免上一位坐過這個位置又離開的人殘留的 presence 誤判成「對手在線」
-      const expectedSeatId = oppSeat === 'red' ? redIdG : blackIdG;
-      opponentOnline = !!(data && data.online && (!expectedSeatId || data.seatId === expectedSeatId));
-      renderGame();
-    });
-  }
-
-  function teardownPresence(){
-    if(unsubscribeOpponentPresence && opponentPresenceRef){
-      off(opponentPresenceRef);
-      unsubscribeOpponentPresence = null;
-    }
-    opponentPresenceRef = null;
-    if(presenceRef){
-      set(presenceRef, { online: false, seatId: myId, lastSeen: serverTimestamp() }).catch(()=>{});
-      presenceRef = null;
-    }
-    opponentOnline = false;
   }
 
   // 比較舊盤面與新盤面，找出唯一一步棋的起點/終點（差異剛好兩格時才算，
@@ -832,12 +786,10 @@
     drawOfferBy = room.drawOfferBy || null;
     redIdG = room.redId || null;
     blackIdG = room.blackId || null;
-    const prevSeat = mySeat;
     if(room.redId === myId) mySeat = 'red';
     else if(room.blackId === myId) mySeat = 'black';
     else {
       // 我的座位已經不在房間裡了（可能被清除），退回大廳
-      teardownPresence();
       stopListening();
       roomCode = null; myId = null; mySeat = null; selected = null;
       gameView.style.display = 'none';
@@ -845,7 +797,6 @@
       lobbyError.textContent = '你已離開這個房間。';
       return;
     }
-    if(mySeat !== prevSeat) setupPresence(); // 座位變動（例如剛搶到空位）時要重新指向對手座位
     selected = null;
     maybeShowDrawOfferDialog();
     renderGame();
@@ -941,7 +892,6 @@
 
     renderGame();
     startListening();
-    setupPresence();
     requestAnimationFrame(fitBoard);
   }
 
@@ -965,10 +915,6 @@
 
   function renderGame(){
     seatBadge.textContent = '你是：' + seatLabel(mySeat);
-    if(opponentStatusEl){
-      if(!bothSeated()) opponentStatusEl.textContent = '對手：尚未加入';
-      else opponentStatusEl.textContent = opponentOnline ? '對手：在線 🟢' : '對手：離線 🔴';
-    }
     turnDotEl.className = 'turn-dot ' + turn;
     const waitingForOpponent = !bothSeated();
     const canAct = (mySeat === turn) && !gameOver && !waitingForOpponent;
@@ -1204,7 +1150,6 @@
       }
       busy = false;
     }
-    teardownPresence();
     stopListening();
     roomCode = null; myId = null; mySeat = null; selected = null;
     gameView.style.display = 'none';
@@ -1258,14 +1203,6 @@
   joinBtn.addEventListener('click', attemptJoin);
   roomCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
   seatCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
-
-  // 頁面關閉前，盡力把自己的 presence 標記為離線（onDisconnect 已能涵蓋大多數
-  // 斷線情境，這裡加一層保險，讓正常關閉分頁時能更快反映在對手畫面上）
-  window.addEventListener('beforeunload', () => {
-    if(presenceRef && myId){
-      set(presenceRef, { online: false, seatId: myId, lastSeen: serverTimestamp() }).catch(()=>{});
-    }
-  });
 </script>
 </body>
 </html>
