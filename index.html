@@ -1,0 +1,1049 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>象棋對戰</title>
+
+<style>
+  :root{
+    --wood-light:#e3bb76;
+    --wood-dark:#dcae63;
+    --wood-border:#5a3a22;
+    --line:#8a5a35;
+    --red:#8f1c1c;
+    --red-light:#c0392b;
+    --black:#161616;
+    --black-light:#4a4a4a;
+  }
+  *{ box-sizing:border-box; }
+  html, body{ overflow-x:hidden; }
+  body{
+    margin:0;
+    min-height:100vh;
+    min-height:100dvh;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:center;
+    gap:14px;
+    background: radial-gradient(circle at 50% 0%, #3d2b1f, #1c130c 70%);
+    font-family:'DFKai-SB','BiauKai','標楷體','KaiTi','STKaiti',serif;
+    padding:16px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px) + 24px);
+    width:100%;
+  }
+
+  /* ---------- 大廳畫面 ---------- */
+  .lobby-card{
+    background:rgba(0,0,0,0.35);
+    border:1px solid rgba(232,200,135,0.3);
+    border-radius:16px;
+    padding:26px 24px;
+    width:100%;
+    max-width:320px;
+    display:flex; flex-direction:column; gap:14px;
+    color:#f6ecd9;
+  }
+  .lobby-card label{ font-size:14px; color:#e8c887; letter-spacing:2px; }
+  .lobby-card input{
+    width:100%; padding:10px 12px; border-radius:8px; border:1px solid #8b5a2b;
+    background:#2a1c11; color:#f6ecd9; font-size:16px; letter-spacing:3px;
+    font-family:inherit; text-align:center;
+  }
+  .row{ display:flex; gap:8px; }
+  .row input{ flex:1; }
+  .btn{
+    border:none; border-radius:999px; cursor:pointer; letter-spacing:2px;
+    font-family:inherit; font-size:14px; padding:10px 18px;
+  }
+  .btn-primary{ background:#b8241f; color:#f6ecd9; }
+  .btn-primary:hover{ background:#d33a34; }
+  .btn-secondary{ background:#3a2a18; color:#e8c887; border:1px solid #8b5a2b; }
+  .btn-secondary:hover{ background:#4a3520; }
+  .hint{ font-size:12px; color:#a8967a; line-height:1.6; }
+  .error{ color:#ff8a80; font-size:13px; min-height:16px; }
+
+  /* ---------- 對局畫面 ---------- */
+  .status-bar{
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap; justify-content:center;
+    background:rgba(0,0,0,0.35);
+    padding:10px 22px; border-radius:999px;
+    color:#cbb28a; font-size:15px; letter-spacing:2px;
+  }
+  .turn-dot{ width:13px; height:13px; border-radius:50%; box-shadow:0 0 8px currentColor; flex-shrink:0; }
+  .turn-dot.red{ background:var(--red); color:var(--red); }
+  .turn-dot.black{ background:var(--black); color:#999; }
+  .badge{
+    background:rgba(232,200,135,0.15); border:1px solid rgba(232,200,135,0.4);
+    padding:3px 12px; border-radius:999px; font-size:13px;
+  }
+  .seat-code-note{ color:#a8967a; font-size:12px; text-align:center; max-width:420px; }
+
+  .board-scale-outer{
+    display:flex;
+    justify-content:center;
+    width:100%;
+    overflow:hidden;
+  }
+  .board{
+    position:relative;
+    background: transparent;
+    border:none;
+    padding:6px 22px;
+    display:inline-block;
+    transform-origin: top center;
+    flex-shrink:0;
+    will-change: transform;
+    -webkit-backface-visibility: hidden;
+    backface-visibility: hidden;
+  }
+  .board.disabled{ filter:grayscale(0.15) brightness(0.92); }
+  .coord-row{ display:flex; }
+  .coord-row span{
+    display:flex; align-items:center; justify-content:center;
+    color:var(--wood-border); font-size:14px; letter-spacing:1px;
+    opacity:0.75;
+  }
+  .grid-wrap{ position:relative; }
+  .grid-svg{ position:absolute; top:0; left:0; pointer-events:none; }
+  .grid{ position:relative; display:grid; }
+  .cell{ position:relative; display:flex; align-items:center; justify-content:center; }
+  .cell .dot{ width:12px; height:12px; border-radius:50%; background:rgba(90,58,34,0.4); }
+  .cell.capture-target::after{
+    content:''; position:absolute; inset:3px; border-radius:50%;
+    border:3px solid rgba(255,255,255,0.75); pointer-events:none;
+  }
+
+  /* 棋子：立體光澤圓子，紅方深棗紅、黑方近黑，白色文字 */
+  .piece{
+    width:40px; height:40px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:20px; font-weight:700; cursor:pointer; user-select:none;
+    transition: transform .12s ease;
+    z-index:5;
+    color:#fdf6e8;
+    text-shadow:0 1px 1px rgba(0,0,0,0.5);
+    font-family:'DFKai-SB','BiauKai','標楷體','KaiTi','STKaiti',serif;
+  }
+  .piece.red{
+    background: radial-gradient(circle at 32% 28%, var(--red-light) 0%, var(--red) 55%, #5c0f0f 100%);
+    border:1px solid #4a0d0d;
+    box-shadow:0 3px 5px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.35), inset 0 -3px 5px rgba(0,0,0,0.35);
+  }
+  .piece.black{
+    background: radial-gradient(circle at 32% 28%, var(--black-light) 0%, var(--black) 55%, #000 100%);
+    border:1px solid #000;
+    box-shadow:0 3px 5px rgba(0,0,0,0.45), inset 0 1px 2px rgba(255,255,255,0.2), inset 0 -3px 5px rgba(0,0,0,0.5);
+  }
+  .piece.selected{ transform:scale(1.14); box-shadow:0 0 0 3px #ffb238, 0 3px 6px rgba(0,0,0,0.5); }
+  .piece.in-check{ box-shadow:0 0 0 3px #ff3b30, 0 3px 6px rgba(0,0,0,0.5); }
+  .piece.not-turn{ cursor:default; }
+
+  /* 圖片版棋子：蓋掉原本的漸層底色與文字樣式，改用圖片背景 */
+  .piece.piece-img{
+    background-image: none; /* 實際圖片透過 inline style 設定，這裡先清掉漸層 */
+    background-size: cover;
+    background-position: center;
+    background-color: transparent;
+    border: none;
+    box-shadow: none;
+    color: transparent;
+    text-shadow: none;
+  }
+  .piece.piece-img.selected{
+    box-shadow: 0 0 0 3px #ffb238;
+  }
+  .piece.piece-img.in-check{
+    box-shadow: 0 0 0 3px #ff3b30;
+  }
+
+  .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
+  .draw-banner{
+    background:rgba(232,200,135,0.15); border:1px solid rgba(232,200,135,0.4);
+    border-radius:12px; padding:10px 16px; color:#f6ecd9; font-size:14px;
+    text-align:center; display:flex; flex-direction:column; gap:8px; align-items:center;
+    max-width:420px;
+  }
+  .draw-banner .draw-actions{ display:flex; gap:8px; }
+  .draw-banner button{ padding:6px 16px; font-size:13px; }
+  .actions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  #copy-msg{ font-size:12px; color:#8fdc8f; min-height:14px; }
+  #conn-status{ font-size:12px; color:#a8967a; min-height:14px; text-align:center; }
+</style>
+</head>
+<body>
+
+  <!-- ---------- 大廳畫面 ---------- -->
+  <div class="lobby-card" id="lobby-view">
+    <div>
+      <label>房間代碼</label>
+      <div class="row">
+        <input id="room-code-input" maxlength="6" placeholder="例如 A1B2" autocomplete="off">
+        <button class="btn btn-secondary" id="random-code-btn">隨機</button>
+      </div>
+    </div>
+    <div>
+      <label>座位碼（重新整理頁面想拿回座位才需要，第一次留空）</label>
+      <input id="seat-code-input" maxlength="8" placeholder="沒有就留空" autocomplete="off">
+    </div>
+    <button class="btn btn-primary" id="join-btn">加入 / 建立房間</button>
+    <div class="error" id="lobby-error"></div>
+    <div class="hint">
+      把房間代碼傳給朋友，對方輸入相同代碼即可加入這個房間，兩人會自動配對並隨機決定誰紅誰黑。
+      加入房間後畫面上會顯示你的座位碼；如果不小心重新整理頁面，把座位碼填回上面欄位即可拿回原本座位。
+      房間的紅、黑兩個座位一旦都坐滿，其他人再嘗試加入都會被拒絕；只要其中一方離開房間，就會空出一個位置，讓下一位加入。
+    </div>
+  </div>
+
+  <!-- ---------- 對局畫面 ---------- -->
+  <div id="game-view" style="display:none; flex-direction:column; align-items:center; gap:14px; width:100%; max-width:520px;">
+    <div class="status-bar">
+      <span class="badge" id="room-badge">房間 ----</span>
+      <span class="badge" id="seat-badge">你是：－</span>
+      <span class="turn-dot" id="turn-dot"></span>
+      <span id="turn-text">紅方回合</span>
+    </div>
+    <div class="seat-code-note" id="seat-code-note"></div>
+
+    <div class="board-scale-outer" id="board-scale-outer">
+      <div class="board" id="board-wrap">
+        <div class="coord-row" id="coord-top"></div>
+        <div class="grid-wrap">
+          <svg class="grid-svg" id="grid-svg"></svg>
+          <div class="grid" id="grid"></div>
+        </div>
+        <div class="coord-row" id="coord-bottom"></div>
+      </div>
+    </div>
+
+    <div class="message" id="message"></div>
+    <div class="draw-banner" id="draw-banner" style="display:none;"></div>
+
+    <div class="actions">
+      <button class="btn btn-secondary" id="resign-btn">認輸</button>
+      <button class="btn btn-secondary" id="draw-offer-btn">求和</button>
+      <button class="btn btn-secondary" id="copy-share-link-btn">分享房間連結</button>
+      <button class="btn btn-secondary" id="copy-link-btn">複製房間代碼</button>
+      <button class="btn btn-secondary" id="restart-btn" style="display:none;">重新開始一局</button>
+      <button class="btn btn-secondary" id="leave-btn">離開房間</button>
+    </div>
+    <div id="copy-msg"></div>
+    <div id="conn-status"></div>
+  </div>
+
+<script type="module">
+  /* =========================================================
+     Firebase 初始化 —— 改用官方 ES Module 寫法（不依賴全域 window.firebase，
+     不會有 <script src> 載入順序 / 被廣告攔截器擋掉導致 "firebase is not
+     defined" 的問題）
+     ========================================================= */
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+  import {
+    getFirestore, doc, getDoc, setDoc, onSnapshot, runTransaction
+  } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyBP7t-6-ytdr8qJd_yv6iZjuqtsZ9urc0w",
+    authDomain: "chinese-chess-90a20.firebaseapp.com",
+    projectId: "chinese-chess-90a20",
+    storageBucket: "chinese-chess-90a20.firebasestorage.app",
+    messagingSenderId: "952241228752",
+    appId: "1:952241228752:web:9ebf4401c2545a901947d5",
+    measurementId: "G-LB2JFM9999"
+  };
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const ROOMS_COLLECTION = 'xiangqiRooms';
+
+  /* =========================================================
+     棋規邏輯（車馬象士將兵炮完整規則、將軍／飛將／將死判定）
+     ========================================================= */
+  const CELL = 48, COLS = 9, ROWS = 10;
+  const pieceNamesRed   = { R:'車', N:'馬', M:'相', G:'仕', K:'帥', P:'兵', C:'炮' };
+  const pieceNamesBlack = { R:'車', N:'馬', M:'象', G:'士', K:'將', P:'卒', C:'砲' };
+
+  // 自訂棋子圖片：圖片放在 GitHub repo 的 Image/Pieces 資料夾裡，
+  // 透過 jsDelivr CDN 讀取（比 raw.githubusercontent.com 穩定、有快取）
+  const PIECE_IMG_BASE = 'https://cdn.jsdelivr.net/gh/YOZORA2926/chinese-chess@main/Image/Pieces/';
+  function pieceImageUrl(p){
+    const color = colorOf(p) === 'red' ? 'red' : 'black';
+    const type = typeOf(p); // R, N, M, G, K, P, C
+    return PIECE_IMG_BASE + color + '-' + type + '.png';
+  }
+
+  function initialBoard(){
+    return [
+      ['r','n','m','g','k','g','m','n','r'],
+      ['','','','','','','','',''],
+      ['','c','','','','','','c',''],
+      ['p','','p','','p','','p','','p'],
+      ['','','','','','','','',''],
+      ['','','','','','','','',''],
+      ['P','','P','','P','','P','','P'],
+      ['','C','','','','','','C',''],
+      ['','','','','','','','',''],
+      ['R','N','M','G','K','G','M','N','R']
+    ];
+  }
+
+  function inBounds(r,c){ return r>=0 && r<ROWS && c>=0 && c<COLS; }
+  function colorOf(p){ if(!p) return null; return p === p.toUpperCase() ? 'red' : 'black'; }
+  function typeOf(p){ return p.toUpperCase(); }
+  function cloneBoard(b){ return b.map(row => row.slice()); }
+
+  function findKing(b, side){
+    const code = side === 'red' ? 'K' : 'k';
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++) if(b[r][c] === code) return [r,c];
+    return null;
+  }
+
+  function pseudoMoves(b, r, c){
+    const p = b[r][c];
+    if(!p) return [];
+    const side = colorOf(p);
+    const type = typeOf(p);
+    const moves = [];
+    const own = (rr,cc) => b[rr][cc] && colorOf(b[rr][cc]) === side;
+
+    if(type === 'R'){
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dr,dc] of dirs){
+        let rr=r+dr, cc=c+dc;
+        while(inBounds(rr,cc)){
+          if(!b[rr][cc]) moves.push([rr,cc]);
+          else { if(!own(rr,cc)) moves.push([rr,cc]); break; }
+          rr+=dr; cc+=dc;
+        }
+      }
+    } else if(type === 'C'){
+      const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+      for(const [dr,dc] of dirs){
+        let rr=r+dr, cc=c+dc, screen=false;
+        while(inBounds(rr,cc)){
+          if(!screen){
+            if(!b[rr][cc]) moves.push([rr,cc]);
+            else screen = true;
+          } else if(b[rr][cc]){
+            if(!own(rr,cc)) moves.push([rr,cc]);
+            break;
+          }
+          rr+=dr; cc+=dc;
+        }
+      }
+    } else if(type === 'N'){
+      const steps = [
+        {dr:-2,dc:-1,leg:[-1,0]}, {dr:-2,dc:1,leg:[-1,0]},
+        {dr:2,dc:-1,leg:[1,0]},   {dr:2,dc:1,leg:[1,0]},
+        {dr:-1,dc:-2,leg:[0,-1]}, {dr:1,dc:-2,leg:[0,-1]},
+        {dr:-1,dc:2,leg:[0,1]},   {dr:1,dc:2,leg:[0,1]},
+      ];
+      for(const s of steps){
+        const lr=r+s.leg[0], lc=c+s.leg[1];
+        if(inBounds(lr,lc) && b[lr][lc]) continue;
+        const tr=r+s.dr, tc=c+s.dc;
+        if(inBounds(tr,tc) && !own(tr,tc)) moves.push([tr,tc]);
+      }
+    } else if(type === 'M'){
+      const steps = [[-2,-2],[-2,2],[2,-2],[2,2]];
+      for(const [dr,dc] of steps){
+        const er=r+dr/2, ec=c+dc/2, tr=r+dr, tc=c+dc;
+        if(!inBounds(tr,tc)) continue;
+        if(b[er][ec]) continue;
+        if(side==='red' && tr<5) continue;
+        if(side==='black' && tr>4) continue;
+        if(!own(tr,tc)) moves.push([tr,tc]);
+      }
+    } else if(type === 'G'){
+      const steps = [[-1,-1],[-1,1],[1,-1],[1,1]];
+      for(const [dr,dc] of steps){
+        const tr=r+dr, tc=c+dc;
+        if(!inBounds(tr,tc) || tc<3 || tc>5) continue;
+        if(side==='red' && tr<7) continue;
+        if(side==='black' && tr>2) continue;
+        if(!own(tr,tc)) moves.push([tr,tc]);
+      }
+    } else if(type === 'K'){
+      const steps = [[-1,0],[1,0],[0,-1],[0,1]];
+      for(const [dr,dc] of steps){
+        const tr=r+dr, tc=c+dc;
+        if(!inBounds(tr,tc) || tc<3 || tc>5) continue;
+        if(side==='red' && tr<7) continue;
+        if(side==='black' && tr>2) continue;
+        if(!own(tr,tc)) moves.push([tr,tc]);
+      }
+    } else if(type === 'P'){
+      const fwd = side==='red' ? -1 : 1;
+      const crossed = side==='red' ? r<=4 : r>=5;
+      const cand = [[fwd,0]];
+      if(crossed){ cand.push([0,-1]); cand.push([0,1]); }
+      for(const [dr,dc] of cand){
+        const tr=r+dr, tc=c+dc;
+        if(inBounds(tr,tc) && !own(tr,tc)) moves.push([tr,tc]);
+      }
+    }
+    return moves;
+  }
+
+  function isSquareAttacked(b, r, c, bySide){
+    for(let rr=0; rr<ROWS; rr++){
+      for(let cc=0; cc<COLS; cc++){
+        const p = b[rr][cc];
+        if(p && colorOf(p) === bySide){
+          if(pseudoMoves(b, rr, cc).some(([mr,mc]) => mr===r && mc===c)) return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  function kingsFacing(b){
+    const rk = findKing(b,'red'), bk = findKing(b,'black');
+    if(!rk || !bk || rk[1] !== bk[1]) return false;
+    const c = rk[1];
+    const r1 = Math.min(rk[0], bk[0]), r2 = Math.max(rk[0], bk[0]);
+    for(let r=r1+1; r<r2; r++) if(b[r][c]) return false;
+    return true;
+  }
+
+  function isInCheck(b, side){
+    const k = findKing(b, side);
+    if(!k) return false;
+    return isSquareAttacked(b, k[0], k[1], side==='red' ? 'black' : 'red');
+  }
+
+  function legalMoves(b, r, c){
+    const p = b[r][c];
+    if(!p) return [];
+    const side = colorOf(p);
+    const legal = [];
+    for(const [tr,tc] of pseudoMoves(b, r, c)){
+      const nb = cloneBoard(b);
+      nb[tr][tc] = nb[r][c];
+      nb[r][c] = '';
+      if(isInCheck(nb, side)) continue;
+      if(kingsFacing(nb)) continue;
+      legal.push([tr,tc]);
+    }
+    return legal;
+  }
+
+  function hasAnyLegalMove(b, side){
+    for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
+      const p=b[r][c];
+      if(p && colorOf(p)===side && legalMoves(b,r,c).length>0) return true;
+    }
+    return false;
+  }
+
+  function pieceLabel(p){
+    const t = typeOf(p);
+    return colorOf(p)==='red' ? pieceNamesRed[t] : pieceNamesBlack[t];
+  }
+
+  /* =========================================================
+     房間 / 連線層：改用 Firebase Firestore 當真正的伺服器
+     board 用一維陣列存在 Firestore 裡（Firestore 對巢狀陣列的
+     即時比對不穩定，攤平成字串陣列較保險）
+     ========================================================= */
+  function genCode(len){
+    const chars='ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let s='';
+    for(let i=0;i<len;i++) s += chars[Math.floor(Math.random()*chars.length)];
+    return s;
+  }
+
+  function freshRoomState(){
+    return {
+      board: initialBoard(),
+      turn: 'red',
+      gameOver: false,
+      message: '',
+      redId: null,
+      blackId: null,
+      drawOfferBy: null
+    };
+  }
+
+  // Firestore 不支援巢狀陣列（array of arrays），存檔前後要轉換
+  function boardToRows(board){ return board.map(row => row.join(',')); }
+  function rowsToBoard(rows){ return rows.map(row => row.split(',')); }
+
+  function encodeRoom(state){
+    return {
+      boardRows: boardToRows(state.board),
+      turn: state.turn,
+      gameOver: state.gameOver,
+      message: state.message || '',
+      redId: state.redId || null,
+      blackId: state.blackId || null,
+      drawOfferBy: state.drawOfferBy || null
+    };
+  }
+  function decodeRoom(data){
+    return {
+      board: rowsToBoard(data.boardRows),
+      turn: data.turn,
+      gameOver: data.gameOver,
+      message: data.message || '',
+      redId: data.redId || null,
+      blackId: data.blackId || null,
+      drawOfferBy: data.drawOfferBy || null
+    };
+  }
+
+  async function getRoom(code){
+    try{
+      const snap = await getDoc(doc(db, ROOMS_COLLECTION, code));
+      if(!snap.exists()) return null;
+      return decodeRoom(snap.data());
+    } catch(e){
+      console.error('讀取房間失敗', e);
+      return null;
+    }
+  }
+
+  async function setRoom(code, state){
+    try{
+      await setDoc(doc(db, ROOMS_COLLECTION, code), encodeRoom(state));
+      return true;
+    } catch(e){
+      console.error('房間同步失敗', e);
+      return false;
+    }
+  }
+
+  /* =========================================================
+     畫面 / 狀態
+     ========================================================= */
+  const lobbyView = document.getElementById('lobby-view');
+  const gameView = document.getElementById('game-view');
+  const roomCodeInput = document.getElementById('room-code-input');
+  const seatCodeInput = document.getElementById('seat-code-input');
+  const joinBtn = document.getElementById('join-btn');
+  const randomCodeBtn = document.getElementById('random-code-btn');
+  const lobbyError = document.getElementById('lobby-error');
+
+  const roomBadge = document.getElementById('room-badge');
+  const seatBadge = document.getElementById('seat-badge');
+  const turnDotEl = document.getElementById('turn-dot');
+  const turnTextEl = document.getElementById('turn-text');
+  const seatCodeNote = document.getElementById('seat-code-note');
+  const gridEl = document.getElementById('grid');
+  const svgEl = document.getElementById('grid-svg');
+  const boardWrap = document.getElementById('board-wrap');
+  const messageEl = document.getElementById('message');
+  const drawBannerEl = document.getElementById('draw-banner');
+  const resignBtn = document.getElementById('resign-btn');
+  const drawOfferBtn = document.getElementById('draw-offer-btn');
+  const restartBtn = document.getElementById('restart-btn');
+  const leaveBtn = document.getElementById('leave-btn');
+  const copyLinkBtn = document.getElementById('copy-link-btn');
+  const copyShareLinkBtn = document.getElementById('copy-share-link-btn');
+  const copyMsgEl = document.getElementById('copy-msg');
+  const connStatusEl = document.getElementById('conn-status');
+
+  gridEl.style.width = (COLS*CELL)+'px';
+  gridEl.style.height = (ROWS*CELL)+'px';
+  gridEl.style.gridTemplateColumns = `repeat(${COLS}, ${CELL}px)`;
+  gridEl.style.gridTemplateRows = `repeat(${ROWS}, ${CELL}px)`;
+  svgEl.setAttribute('width', COLS*CELL);
+  svgEl.setAttribute('height', ROWS*CELL);
+  svgEl.setAttribute('viewBox', `0 0 ${COLS*CELL} ${ROWS*CELL}`);
+
+  const chineseNums = ['一','二','三','四','五','六','七','八','九'];
+  let lastCoordFlip = null; // 記住上次畫的方向，避免每次 render 都重建 DOM
+
+  // 座標數字永遠跟著自己實際所在的那一欄（不受畫面翻轉影響），
+  // 只是翻轉後畫面上「哪一列（上/下）」顯示哪一組數字要跟著換
+  function renderCoordLabels(flipped){
+    if(flipped === lastCoordFlip) return;
+    lastCoordFlip = flipped;
+    const coordTop = document.getElementById('coord-top');
+    const coordBottom = document.getElementById('coord-bottom');
+    coordTop.style.width = (COLS*CELL)+'px';
+    coordBottom.style.width = (COLS*CELL)+'px';
+    coordTop.innerHTML = '';
+    coordBottom.innerHTML = '';
+    for(let dc=0; dc<COLS; dc++){
+      const c = flipped ? (COLS-1-dc) : dc; // 這個畫面欄位對應的實際棋盤欄位
+      const digitLabel = String(c+1);
+      const hanziLabel = chineseNums[COLS-1-c];
+
+      const top = document.createElement('span');
+      top.style.width = CELL+'px'; top.style.height = '22px';
+      top.textContent = flipped ? hanziLabel : digitLabel;
+      coordTop.appendChild(top);
+
+      const bottom = document.createElement('span');
+      bottom.style.width = CELL+'px'; bottom.style.height = '22px';
+      bottom.textContent = flipped ? digitLabel : hanziLabel;
+      coordBottom.appendChild(bottom);
+    }
+  }
+  renderCoordLabels(false);
+
+  function drawGridLines(){
+    const cx = c => c*CELL + CELL/2;
+    const cy = r => r*CELL + CELL/2;
+    const s = 'stroke="#8a5a35" stroke-width="1.5" stroke-linecap="round"';
+    let svg = '';
+    for(let r=0;r<ROWS;r++){
+      svg += `<line x1="${cx(0)}" y1="${cy(r)}" x2="${cx(COLS-1)}" y2="${cy(r)}" ${s}/>`;
+    }
+    for(let c=0;c<COLS;c++){
+      if(c===0 || c===COLS-1){
+        svg += `<line x1="${cx(c)}" y1="${cy(0)}" x2="${cx(c)}" y2="${cy(ROWS-1)}" ${s}/>`;
+      } else {
+        svg += `<line x1="${cx(c)}" y1="${cy(0)}" x2="${cx(c)}" y2="${cy(4)}" ${s}/>`;
+        svg += `<line x1="${cx(c)}" y1="${cy(5)}" x2="${cx(c)}" y2="${cy(ROWS-1)}" ${s}/>`;
+      }
+    }
+    svg += `<line x1="${cx(3)}" y1="${cy(0)}" x2="${cx(5)}" y2="${cy(2)}" ${s}/>`;
+    svg += `<line x1="${cx(5)}" y1="${cy(0)}" x2="${cx(3)}" y2="${cy(2)}" ${s}/>`;
+    svg += `<line x1="${cx(3)}" y1="${cy(7)}" x2="${cx(5)}" y2="${cy(9)}" ${s}/>`;
+    svg += `<line x1="${cx(5)}" y1="${cy(7)}" x2="${cx(3)}" y2="${cy(9)}" ${s}/>`;
+    const midY = (cy(4)+cy(5))/2 + 6;
+    svg += `<text x="${cx(1)+8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">楚 河</text>`;
+    svg += `<text x="${cx(7)-8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">漢 界</text>`;
+    svgEl.innerHTML = svg;
+  }
+  drawGridLines();
+
+  const boardScaleOuter = document.getElementById('board-scale-outer');
+
+  function fitBoard(){
+    if(!boardWrap || boardWrap.offsetParent === null) return; // 目前不可見就不用算
+    boardWrap.style.transform = 'none'; // 先重置才能量到原始尺寸
+    void boardWrap.offsetHeight; // 強制觸發 reflow，避免部分手機瀏覽器沿用舊的圖層快取，
+                                  // 導致棋盤背景（木紋色塊）只重繪到一半、下半段變透明的問題
+    const naturalWidth = boardWrap.offsetWidth;
+    const naturalHeight = boardWrap.offsetHeight;
+    if(!naturalWidth) return;
+    const available = boardScaleOuter.clientWidth || naturalWidth;
+    const scale = Math.min(1, available / naturalWidth);
+    boardWrap.style.transform = `scale(${scale})`;
+    boardScaleOuter.style.height = (naturalHeight * scale) + 'px';
+  }
+  window.addEventListener('resize', fitBoard);
+  window.addEventListener('orientationchange', () => setTimeout(fitBoard, 100));
+
+  let myId = null;
+  let roomCode = null;
+  let mySeat = null;      // 'red' | 'black'
+  let board = initialBoard();
+  let turn = 'red';
+  let gameOver = false;
+  let message = '';
+  let drawOfferBy = null; // null | 'red' | 'black'
+  let selected = null;
+  let unsubscribeRoom = null; // Firestore 即時監聽的取消函式
+  let busy = false;       // 避免同一時間重複寫入
+
+  function seatLabel(s){
+    if(s==='red') return '紅方';
+    if(s==='black') return '黑方';
+    return '－';
+  }
+
+  function applyRoomToLocal(room){
+    board = room.board;
+    turn = room.turn;
+    gameOver = room.gameOver;
+    message = room.message || '';
+    drawOfferBy = room.drawOfferBy || null;
+    if(room.redId === myId) mySeat = 'red';
+    else if(room.blackId === myId) mySeat = 'black';
+    else {
+      // 我的座位已經不在房間裡了（可能被清除），退回大廳
+      stopListening();
+      roomCode = null; myId = null; mySeat = null; selected = null;
+      gameView.style.display = 'none';
+      lobbyView.style.display = 'flex';
+      lobbyError.textContent = '你已離開這個房間。';
+      return;
+    }
+    selected = null;
+    renderGame();
+  }
+
+  async function attemptJoin(){
+    lobbyError.textContent = '';
+    const code = roomCodeInput.value.trim().toUpperCase();
+    if(!code){ lobbyError.textContent = '請先輸入或產生房間代碼'; return; }
+
+    const enteredSeat = seatCodeInput.value.trim();
+    const candidateId = enteredSeat || genCode(6);
+
+    joinBtn.disabled = true;
+    joinBtn.textContent = '連線中...';
+
+    let room, assignedSeat = null;
+
+    try{
+      // 用 transaction 避免兩人同時加入時互相蓋掉座位
+      const docRef = doc(db, ROOMS_COLLECTION, code);
+      const result = await runTransaction(db, async (tx) => {
+        const snap = await tx.get(docRef);
+        let data = snap.exists() ? decodeRoom(snap.data()) : freshRoomState();
+
+        if(data.redId === candidateId){
+          assignedSeat = 'red';
+        } else if(data.blackId === candidateId){
+          assignedSeat = 'black';
+        } else if(data.redId && data.blackId){
+          assignedSeat = null; // 滿了
+        } else if(!data.redId && !data.blackId){
+          assignedSeat = Math.random() < 0.5 ? 'red' : 'black';
+          data[assignedSeat + 'Id'] = candidateId;
+        } else if(!data.redId){
+          data.redId = candidateId;
+          assignedSeat = 'red';
+        } else {
+          data.blackId = candidateId;
+          assignedSeat = 'black';
+        }
+
+        if(assignedSeat) tx.set(docRef, encodeRoom(data));
+        return data;
+      });
+      room = result;
+    } catch(e){
+      console.error(e);
+      joinBtn.disabled = false;
+      joinBtn.textContent = '加入 / 建立房間';
+      const code = e && e.code ? `（${e.code}）` : '';
+      lobbyError.textContent = `連線 Firebase 失敗${code}：${e && e.message ? e.message : e}`;
+      return;
+    }
+
+    if(!assignedSeat){
+      joinBtn.disabled = false;
+      joinBtn.textContent = '加入 / 建立房間';
+      lobbyError.textContent = '這個房間已經滿了，請稍後再試，或請房間裡的人離開後再加入。';
+      return;
+    }
+
+    roomCode = code;
+    myId = candidateId;
+    mySeat = assignedSeat;
+    board = room.board; turn = room.turn; gameOver = room.gameOver; message = room.message || '';
+    selected = null;
+
+    joinBtn.disabled = false;
+    joinBtn.textContent = '加入 / 建立房間';
+
+    roomBadge.textContent = '房間 ' + roomCode;
+    lobbyView.style.display = 'none';
+    gameView.style.display = 'flex';
+
+    seatCodeNote.textContent = `你的座位碼：${myId}（重新整理頁面或想在別的裝置接續操作，把這組代碼填入「座位碼」欄位即可拿回原本座位；不會自動記住，避免同帳號多裝置互相搶座位）`;
+
+    renderGame();
+    startListening();
+    requestAnimationFrame(fitBoard);
+  }
+
+  function startListening(){
+    stopListening();
+    connStatusEl.textContent = '即時連線中...';
+    unsubscribeRoom = onSnapshot(doc(db, ROOMS_COLLECTION, roomCode), (docSnap) => {
+        connStatusEl.textContent = '';
+        if(!docSnap.exists()) return;
+        if(busy) return; // 剛好自己正在寫入時，避免用還沒最新的資料覆蓋畫面
+        applyRoomToLocal(decodeRoom(docSnap.data()));
+      }, (err) => {
+        console.error('即時連線發生錯誤', err);
+        connStatusEl.textContent = '連線中斷，正在嘗試恢復...';
+      });
+  }
+
+  function stopListening(){
+    if(unsubscribeRoom){ unsubscribeRoom(); unsubscribeRoom = null; }
+  }
+
+  function renderGame(){
+    seatBadge.textContent = '你是：' + seatLabel(mySeat);
+    turnDotEl.className = 'turn-dot ' + turn;
+    const canAct = (mySeat === turn) && !gameOver;
+    boardWrap.classList.toggle('disabled', !canAct);
+
+    let turnLine = (turn==='red' ? '紅方回合' : '黑方回合');
+    if(isInCheck(board, turn)) turnLine += '（將軍！）';
+    if(!gameOver) turnLine += (mySeat === turn ? '（換你了）' : '（等待對方）');
+    turnTextEl.textContent = turnLine;
+
+    messageEl.textContent = message || '';
+    restartBtn.style.display = (gameOver && (mySeat==='red'||mySeat==='black')) ? 'inline-block' : 'none';
+
+    const isPlayer = (mySeat === 'red' || mySeat === 'black');
+    resignBtn.style.display = (isPlayer && !gameOver) ? 'inline-block' : 'none';
+    drawOfferBtn.style.display = (isPlayer && !gameOver && !drawOfferBy) ? 'inline-block' : 'none';
+
+    renderDrawBanner();
+
+    // 黑方玩家看到的畫面要上下左右都翻轉過來，讓自己的棋子永遠在畫面下方
+    const flipped = (mySeat === 'black');
+    renderCoordLabels(flipped);
+
+    gridEl.innerHTML = '';
+    const legal = (selected && canAct) ? legalMoves(board, selected[0], selected[1]) : [];
+    const checkSide = ['red','black'].find(s => isInCheck(board, s));
+    const kingPos = checkSide ? findKing(board, checkSide) : null;
+
+    for(let dr=0; dr<ROWS; dr++){
+      for(let dc=0; dc<COLS; dc++){
+        // dr,dc 是畫面上的顯示座標；r,c 是實際棋盤資料座標
+        const r = flipped ? (ROWS-1-dr) : dr;
+        const c = flipped ? (COLS-1-dc) : dc;
+
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        const isTarget = legal.some(([mr,mc]) => mr===r && mc===c);
+        const p = board[r][c];
+
+        if(p){
+          const piece = document.createElement('div');
+          piece.className = `piece piece-img ${colorOf(p)}` + (canAct ? '' : ' not-turn');
+          piece.style.backgroundImage = `url("${pieceImageUrl(p)}")`;
+          if(selected && selected[0]===r && selected[1]===c) piece.classList.add('selected');
+          if(kingPos && kingPos[0]===r && kingPos[1]===c) piece.classList.add('in-check');
+          piece.addEventListener('click', (e) => { e.stopPropagation(); onCellClick(r,c); });
+          cell.appendChild(piece);
+          if(isTarget) cell.classList.add('capture-target');
+        } else if(isTarget){
+          const dot = document.createElement('div');
+          dot.className = 'dot';
+          cell.appendChild(dot);
+        }
+        cell.addEventListener('click', () => onCellClick(r,c));
+        gridEl.appendChild(cell);
+      }
+    }
+  }
+
+  function renderDrawBanner(){
+    const isPlayer = (mySeat === 'red' || mySeat === 'black');
+    if(gameOver || !isPlayer || !drawOfferBy){
+      drawBannerEl.style.display = 'none';
+      drawBannerEl.innerHTML = '';
+      return;
+    }
+    drawBannerEl.style.display = 'flex';
+    if(drawOfferBy === mySeat){
+      drawBannerEl.innerHTML = '';
+      const p = document.createElement('div');
+      p.textContent = '已送出求和請求，等待對方回應...';
+      drawBannerEl.appendChild(p);
+      const actions = document.createElement('div');
+      actions.className = 'draw-actions';
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = '取消求和';
+      cancelBtn.addEventListener('click', () => respondToDrawOffer(null));
+      actions.appendChild(cancelBtn);
+      drawBannerEl.appendChild(actions);
+    } else {
+      drawBannerEl.innerHTML = '';
+      const p = document.createElement('div');
+      p.textContent = `${seatLabel(drawOfferBy)}提出求和，是否同意？`;
+      drawBannerEl.appendChild(p);
+      const actions = document.createElement('div');
+      actions.className = 'draw-actions';
+      const acceptBtn = document.createElement('button');
+      acceptBtn.className = 'btn btn-primary';
+      acceptBtn.textContent = '同意求和';
+      acceptBtn.addEventListener('click', () => acceptDrawOffer());
+      const declineBtn = document.createElement('button');
+      declineBtn.className = 'btn btn-secondary';
+      declineBtn.textContent = '拒絕';
+      declineBtn.addEventListener('click', () => respondToDrawOffer(null));
+      actions.appendChild(acceptBtn);
+      actions.appendChild(declineBtn);
+      drawBannerEl.appendChild(actions);
+    }
+  }
+
+  async function respondToDrawOffer(newValue){
+    busy = true;
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.drawOfferBy = newValue;
+    await setRoom(roomCode, room);
+    drawOfferBy = newValue;
+    busy = false;
+    renderGame();
+  }
+
+  async function acceptDrawOffer(){
+    busy = true;
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.gameOver = true;
+    room.message = '雙方同意求和，本局和局！';
+    room.drawOfferBy = null;
+    await setRoom(roomCode, room);
+    gameOver = true; message = room.message; drawOfferBy = null;
+    busy = false;
+    renderGame();
+  }
+
+  function onCellClick(r,c){
+    if(gameOver) return;
+    if(mySeat !== turn) return; // 不是你的回合就不能動子
+    const p = board[r][c];
+
+    if(selected){
+      const [sr,sc] = selected;
+      if(sr===r && sc===c){ selected=null; renderGame(); return; }
+      const isLegal = legalMoves(board, sr, sc).some(([mr,mc]) => mr===r && mc===c);
+      if(isLegal){ makeMove(sr,sc,r,c); return; }
+      if(p && colorOf(p)===turn){ selected=[r,c]; renderGame(); return; }
+      selected = null; renderGame(); return;
+    } else if(p && colorOf(p)===turn){
+      selected = [r,c]; renderGame();
+    }
+  }
+
+  async function makeMove(sr,sc,tr,tc){
+    busy = true;
+    const nb = cloneBoard(board);
+    nb[tr][tc] = nb[sr][sc];
+    nb[sr][sc] = '';
+    const nextTurn = turn==='red' ? 'black' : 'red';
+    const inCheck = isInCheck(nb, nextTurn);
+    const anyMoves = hasAnyLegalMove(nb, nextTurn);
+    const label = s => s==='red' ? '紅方' : '黑方';
+
+    let newMessage = '';
+    let over = false;
+    if(!anyMoves){
+      over = true;
+      const winner = nextTurn==='red' ? 'black' : 'red';
+      newMessage = inCheck
+        ? `${label(nextTurn)}被將死，${label(winner)}獲勝！`
+        : `${label(nextTurn)}無子可動，${label(winner)}獲勝！`;
+    }
+
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.board = nb;
+    room.turn = nextTurn;
+    room.gameOver = over;
+    room.message = newMessage;
+    room.redId = room.redId; room.blackId = room.blackId;
+    await setRoom(roomCode, room);
+
+    board = nb; turn = nextTurn; gameOver = over; message = newMessage; selected = null;
+    renderGame();
+    busy = false;
+  }
+
+  restartBtn.addEventListener('click', async () => {
+    if(mySeat !== 'red' && mySeat !== 'black') return;
+    busy = true;
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.board = initialBoard();
+    room.turn = 'red';
+    room.gameOver = false;
+    room.message = '';
+    room.drawOfferBy = null;
+    await setRoom(roomCode, room);
+    busy = false;
+    applyRoomToLocal(room);
+  });
+
+  resignBtn.addEventListener('click', async () => {
+    if(mySeat !== 'red' && mySeat !== 'black') return;
+    if(gameOver) return;
+    const confirmResign = window.confirm('確定要認輸嗎？認輸後這局就結束了。');
+    if(!confirmResign) return;
+    busy = true;
+    const winner = mySeat === 'red' ? 'black' : 'red';
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.gameOver = true;
+    room.message = `${seatLabel(mySeat)}認輸，${seatLabel(winner)}獲勝！`;
+    room.drawOfferBy = null;
+    await setRoom(roomCode, room);
+    gameOver = true; message = room.message; drawOfferBy = null;
+    busy = false;
+    renderGame();
+  });
+
+  drawOfferBtn.addEventListener('click', async () => {
+    if(mySeat !== 'red' && mySeat !== 'black') return;
+    if(gameOver || drawOfferBy) return;
+    busy = true;
+    const room = (await getRoom(roomCode)) || freshRoomState();
+    room.drawOfferBy = mySeat;
+    await setRoom(roomCode, room);
+    drawOfferBy = mySeat;
+    busy = false;
+    renderGame();
+  });
+
+  leaveBtn.addEventListener('click', async () => {
+    if(roomCode && mySeat){
+      busy = true;
+      const room = await getRoom(roomCode);
+      if(room){
+        // 只清空自己的座位，空出一個名額給下一位加入者，對方仍可繼續留在房間
+        if(mySeat === 'red' && room.redId === myId) room.redId = null;
+        if(mySeat === 'black' && room.blackId === myId) room.blackId = null;
+        await setRoom(roomCode, room);
+      }
+      busy = false;
+    }
+    stopListening();
+    roomCode = null; myId = null; mySeat = null; selected = null;
+    gameView.style.display = 'none';
+    lobbyView.style.display = 'flex';
+    roomCodeInput.value = '';
+    seatCodeInput.value = '';
+    lobbyError.textContent = '';
+  });
+
+  copyLinkBtn.addEventListener('click', async () => {
+    try{
+      await navigator.clipboard.writeText(roomCode);
+      copyMsgEl.textContent = '已複製房間代碼：' + roomCode + '，傳給朋友貼到「房間代碼」欄位即可加入';
+    } catch(e){
+      copyMsgEl.textContent = '房間代碼：' + roomCode + '（請手動複製）';
+    }
+    setTimeout(() => { copyMsgEl.textContent = ''; }, 3000);
+  });
+
+  function buildShareUrl(code){
+    const url = new URL(window.location.href);
+    url.search = ''; url.hash = '';
+    url.searchParams.set('room', code);
+    return url.toString();
+  }
+
+  copyShareLinkBtn.addEventListener('click', async () => {
+    const shareUrl = buildShareUrl(roomCode);
+    try{
+      await navigator.clipboard.writeText(shareUrl);
+      copyMsgEl.textContent = '已複製分享連結，傳給朋友，對方點開就會自動填好房間代碼';
+    } catch(e){
+      copyMsgEl.textContent = '分享連結：' + shareUrl + '（請手動複製）';
+    }
+    setTimeout(() => { copyMsgEl.textContent = ''; }, 4000);
+  });
+
+  // 如果網址帶了 ?room=XXXX（朋友分享連結進來的），自動把房間代碼填好
+  (function prefillRoomFromUrl(){
+    const params = new URLSearchParams(window.location.search);
+    const roomFromUrl = params.get('room');
+    if(roomFromUrl){
+      roomCodeInput.value = roomFromUrl.toUpperCase();
+    }
+  })();
+
+  randomCodeBtn.addEventListener('click', () => {
+    roomCodeInput.value = genCode(4);
+  });
+
+  joinBtn.addEventListener('click', attemptJoin);
+  roomCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
+  seatCodeInput.addEventListener('keydown', (e) => { if(e.key==='Enter') attemptJoin(); });
+</script>
+</body>
+</html>
