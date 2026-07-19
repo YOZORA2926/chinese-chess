@@ -152,15 +152,16 @@
     background-position: center;
     background-color: transparent;
     border: none;
-    box-shadow: none;
+    /* 陰影參數對應：模式一般、不透明度40%、X位移4px、Y位移4px、模糊5px、顏色黑 */
+    box-shadow: 4px 4px 5px rgba(0,0,0,0.4);
     color: transparent;
     text-shadow: none;
   }
   .piece.piece-img.selected{
-    box-shadow: 0 0 0 3px #ffb238;
+    box-shadow: 4px 4px 5px rgba(0,0,0,0.4), 0 0 0 3px #ffb238;
   }
   .piece.piece-img.in-check{
-    box-shadow: 0 0 0 3px #ff3b30;
+    box-shadow: 4px 4px 5px rgba(0,0,0,0.4), 0 0 0 3px #ff3b30;
   }
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
@@ -892,8 +893,8 @@
     restartBtn.style.display = (gameOver && (mySeat==='red'||mySeat==='black')) ? 'inline-block' : 'none';
 
     const isPlayer = (mySeat === 'red' || mySeat === 'black');
-    resignBtn.style.display = (isPlayer && !gameOver && !waitingForOpponent) ? 'inline-block' : 'none';
-    drawOfferBtn.style.display = (isPlayer && !gameOver && !waitingForOpponent && !drawOfferBy) ? 'inline-block' : 'none';
+    resignBtn.style.display = (isPlayer && !gameOver) ? 'inline-block' : 'none';
+    drawOfferBtn.style.display = (isPlayer && !gameOver && !drawOfferBy) ? 'inline-block' : 'none';
 
     // 黑方玩家看到的畫面要上下左右都翻轉過來，讓自己的棋子永遠在畫面下方
     const flipped = (mySeat === 'black');
@@ -1031,6 +1032,7 @@
   resignBtn.addEventListener('click', async () => {
     if(mySeat !== 'red' && mySeat !== 'black') return;
     if(gameOver) return;
+    if(!bothSeated()){ window.alert('對手還沒加入，不能認輸。'); return; }
     const confirmResign = window.confirm('確定要認輸嗎？認輸後這局就結束了。');
     if(!confirmResign) return;
     busy = true;
@@ -1049,6 +1051,7 @@
   drawOfferBtn.addEventListener('click', async () => {
     if(mySeat !== 'red' && mySeat !== 'black') return;
     if(gameOver || drawOfferBy) return;
+    if(!bothSeated()){ window.alert('對手還沒加入，不能求和。'); return; }
     busy = true;
     const room = (await getRoom(roomCode)) || freshRoomState();
     room.drawOfferBy = mySeat;
