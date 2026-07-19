@@ -166,7 +166,9 @@
   }
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
-  .draw-banner-overlay{
+
+  /* ---------- 統一彈窗（求和 / 認輸確認 共用同一套樣式） ---------- */
+  .modal-overlay{
     display:none;
     position:fixed; inset:0;
     background:rgba(0,0,0,0.55);
@@ -174,15 +176,16 @@
     z-index:1000;
     padding:20px;
   }
-  .draw-banner{
+  .modal-box{
     background:#241609; border:1px solid rgba(232,200,135,0.4);
     border-radius:14px; padding:22px 24px; color:#f6ecd9; font-size:15px;
     text-align:center; display:flex; flex-direction:column; gap:14px; align-items:center;
     max-width:320px; width:100%;
     box-shadow:0 12px 34px rgba(0,0,0,0.55);
   }
-  .draw-banner .draw-actions{ display:flex; gap:8px; }
-  .draw-banner button{ padding:6px 16px; font-size:13px; }
+  .modal-box .modal-actions{ display:flex; gap:8px; }
+  .modal-box button{ padding:6px 16px; font-size:13px; }
+
   .actions{ display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
   #copy-msg{ font-size:12px; color:#8fdc8f; min-height:14px; }
   #conn-status{ font-size:12px; color:#a8967a; min-height:14px; text-align:center; }
@@ -234,8 +237,15 @@
     </div>
 
     <div class="message" id="message"></div>
-    <div class="draw-banner-overlay" id="draw-banner-overlay" style="display:none;">
-      <div class="draw-banner" id="draw-banner"></div>
+
+    <!-- 求和彈窗 -->
+    <div class="modal-overlay" id="draw-banner-overlay">
+      <div class="modal-box" id="draw-banner"></div>
+    </div>
+
+    <!-- 認輸確認彈窗（跟求和彈窗共用同一套 .modal-overlay / .modal-box 樣式） -->
+    <div class="modal-overlay" id="confirm-overlay">
+      <div class="modal-box" id="confirm-box"></div>
     </div>
 
     <div class="actions">
@@ -560,6 +570,8 @@
   const messageEl = document.getElementById('message');
   const drawBannerOverlayEl = document.getElementById('draw-banner-overlay');
   const drawBannerEl = document.getElementById('draw-banner');
+  const confirmOverlayEl = document.getElementById('confirm-overlay');
+  const confirmBoxEl = document.getElementById('confirm-box');
   const resignBtn = document.getElementById('resign-btn');
   const drawOfferBtn = document.getElementById('draw-offer-btn');
   const restartBtn = document.getElementById('restart-btn');
@@ -708,6 +720,34 @@
     if(s==='red') return '紅方';
     if(s==='black') return '黑方';
     return '－';
+  }
+
+  /* ---------- 統一的確認彈窗（認輸確認 / 求和 都走這一套 .modal-overlay / .modal-box） ---------- */
+  // 簡單的「純文字 + 按鈕列」彈窗，用於認輸確認這種一次性、不需要跟房間狀態同步的情境
+  function showConfirmModal(text, buttons){
+    confirmBoxEl.innerHTML = '';
+    const p = document.createElement('div');
+    p.textContent = text;
+    confirmBoxEl.appendChild(p);
+
+    const actions = document.createElement('div');
+    actions.className = 'modal-actions';
+    for(const btnDef of buttons){
+      const btn = document.createElement('button');
+      btn.className = 'btn ' + (btnDef.primary ? 'btn-primary' : 'btn-secondary');
+      btn.textContent = btnDef.label;
+      btn.addEventListener('click', () => {
+        hideConfirmModal();
+        if(btnDef.onClick) btnDef.onClick();
+      });
+      actions.appendChild(btn);
+    }
+    confirmBoxEl.appendChild(actions);
+    confirmOverlayEl.style.display = 'flex';
+  }
+  function hideConfirmModal(){
+    confirmOverlayEl.style.display = 'none';
+    confirmBoxEl.innerHTML = '';
   }
 
   // 比較舊盤面與新盤面，找出唯一一步棋的起點/終點（差異剛好兩格時才算，
@@ -947,7 +987,7 @@
       p.textContent = '已送出求和請求，等待對方回應...';
       drawBannerEl.appendChild(p);
       const actions = document.createElement('div');
-      actions.className = 'draw-actions';
+      actions.className = 'modal-actions';
       const cancelBtn = document.createElement('button');
       cancelBtn.className = 'btn btn-secondary';
       cancelBtn.textContent = '取消求和';
@@ -960,7 +1000,7 @@
       p.textContent = `${seatLabel(drawOfferBy)}提出求和，是否同意？`;
       drawBannerEl.appendChild(p);
       const actions = document.createElement('div');
-      actions.className = 'draw-actions';
+      actions.className = 'modal-actions';
       const acceptBtn = document.createElement('button');
       acceptBtn.className = 'btn btn-primary';
       acceptBtn.textContent = '同意求和';
@@ -1062,21 +1102,28 @@
     applyRoomToLocal(room);
   });
 
-  resignBtn.addEventListener('click', async () => {
+  resignBtn.addEventListener('click', () => {
     if(mySeat !== 'red' && mySeat !== 'black') return;
     if(gameOver) return;
-    const confirmResign = window.confirm('確定要認輸嗎？認輸後這局就結束了。');
-    if(!confirmResign) return;
-    busy = true;
-    const winner = mySeat === 'red' ? 'black' : 'red';
-    const room = (await getRoom(roomCode)) || freshRoomState();
-    room.gameOver = true;
-    room.message = `${seatLabel(mySeat)}認輸，${seatLabel(winner)}獲勝！`;
-    room.drawOfferBy = null;
-    await setRoom(roomCode, room);
-    gameOver = true; message = room.message; drawOfferBy = null;
-    busy = false;
-    renderGame();
+    showConfirmModal('確定要認輸嗎？認輸後這局就結束了。', [
+      {
+        label: '確定認輸',
+        primary: true,
+        onClick: async () => {
+          busy = true;
+          const winner = mySeat === 'red' ? 'black' : 'red';
+          const room = (await getRoom(roomCode)) || freshRoomState();
+          room.gameOver = true;
+          room.message = `${seatLabel(mySeat)}認輸，${seatLabel(winner)}獲勝！`;
+          room.drawOfferBy = null;
+          await setRoom(roomCode, room);
+          gameOver = true; message = room.message; drawOfferBy = null;
+          busy = false;
+          renderGame();
+        }
+      },
+      { label: '取消', primary: false }
+    ]);
   });
 
   drawOfferBtn.addEventListener('click', async () => {
