@@ -263,13 +263,20 @@
   const pieceNamesRed   = { R:'車', N:'馬', M:'相', G:'仕', K:'帥', P:'兵', C:'炮' };
   const pieceNamesBlack = { R:'車', N:'馬', M:'象', G:'士', K:'將', P:'卒', C:'砲' };
 
-  // 自訂棋子圖片：圖片放在 GitHub repo 的 Image/Pieces 資料夾裡，
-  // 透過 jsDelivr CDN 讀取（比 raw.githubusercontent.com 穩定、有快取）
-  const PIECE_IMG_BASE = 'https://cdn.jsdelivr.net/gh/YOZORA2926/chinese-chess@main/Image/Pieces/';
+  // 自訂棋子圖片：圖片放在 GitHub repo 的 Image/Pieces 資料夾裡。
+  // 改用 raw.githubusercontent.com 而非 jsDelivr，因為 jsDelivr 是 CDN，
+  // 節點多、快取層多，即使手動 purge 也常常有節點沒清乾淨，導致換圖後
+  // 舊圖(或舊的透明度)還是會在某些地區/某些人的裝置上出現。
+  // raw.githubusercontent.com 本身也會快取，所以另外加上版本號查詢參數
+  // (PIECE_IMG_VERSION)，之後只要每次換圖就把這個版本號改掉（例如改成
+  // 日期字串 '20260719' 或直接遞增數字），瀏覽器/CDN 就會把它當成全新的
+  // URL，一定會重新抓取最新檔案，不用再手動清快取。
+  const PIECE_IMG_BASE = 'https://raw.githubusercontent.com/YOZORA2926/chinese-chess/main/Image/Pieces/';
+  const PIECE_IMG_VERSION = '20260719'; // 每次換圖片檔案時，把這個字串改掉即可強制更新
   function pieceImageUrl(p){
     const color = colorOf(p) === 'red' ? 'red' : 'black';
     const type = typeOf(p); // R, N, M, G, K, P, C
-    return PIECE_IMG_BASE + color + '-' + type + '.png';
+    return PIECE_IMG_BASE + color + '-' + type + '.png' + '?v=' + PIECE_IMG_VERSION;
   }
 
   function initialBoard(){
