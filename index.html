@@ -159,11 +159,20 @@
   }
 
   .message{ min-height:20px; color:#ffd479; font-size:15px; font-weight:600; text-align:center; }
+  .draw-banner-overlay{
+    display:none;
+    position:fixed; inset:0;
+    background:rgba(0,0,0,0.55);
+    align-items:center; justify-content:center;
+    z-index:1000;
+    padding:20px;
+  }
   .draw-banner{
-    background:rgba(232,200,135,0.15); border:1px solid rgba(232,200,135,0.4);
-    border-radius:12px; padding:10px 16px; color:#f6ecd9; font-size:14px;
-    text-align:center; display:flex; flex-direction:column; gap:8px; align-items:center;
-    max-width:420px;
+    background:#241609; border:1px solid rgba(232,200,135,0.4);
+    border-radius:14px; padding:22px 24px; color:#f6ecd9; font-size:15px;
+    text-align:center; display:flex; flex-direction:column; gap:14px; align-items:center;
+    max-width:320px; width:100%;
+    box-shadow:0 12px 34px rgba(0,0,0,0.55);
   }
   .draw-banner .draw-actions{ display:flex; gap:8px; }
   .draw-banner button{ padding:6px 16px; font-size:13px; }
@@ -218,7 +227,9 @@
     </div>
 
     <div class="message" id="message"></div>
-    <div class="draw-banner" id="draw-banner" style="display:none;"></div>
+    <div class="draw-banner-overlay" id="draw-banner-overlay" style="display:none;">
+      <div class="draw-banner" id="draw-banner"></div>
+    </div>
 
     <div class="actions">
       <button class="btn btn-secondary" id="resign-btn">認輸</button>
@@ -540,6 +551,7 @@
   const svgEl = document.getElementById('grid-svg');
   const boardWrap = document.getElementById('board-wrap');
   const messageEl = document.getElementById('message');
+  const drawBannerOverlayEl = document.getElementById('draw-banner-overlay');
   const drawBannerEl = document.getElementById('draw-banner');
   const resignBtn = document.getElementById('resign-btn');
   const drawOfferBtn = document.getElementById('draw-offer-btn');
@@ -595,7 +607,7 @@
   // 畫「士／卒／砲／兵」出發點旁邊的定位十字（傳統棋盤上常見的那種小直角標記）。
   // 在邊線（第1、9路）上因為外側沒有格子，只畫靠棋盤內側那一半。
   function crossMarkSvg(cx0, cy0, hasLeft, hasRight){
-    const g = 5, len = 9;
+    const g = 4, len = 6;
     const seg = (x1,y1,x2,y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${BOARD_LINE_COLOR}" stroke-width="1.5" stroke-linecap="round"/>`;
     let s = '';
     if(hasLeft){
@@ -645,8 +657,8 @@
     }
 
     const midY = (cy(4)+cy(5))/2 + 6;
-    svg += `<text x="${cx(1)+8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">楚 河</text>`;
-    svg += `<text x="${cx(7)-8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">漢 界</text>`;
+    svg += `<text x="${cx(1)+8}" y="${midY}" font-size="19" fill="${BOARD_LINE_COLOR}" font-weight="700" text-anchor="middle">楚 河</text>`;
+    svg += `<text x="${cx(7)-8}" y="${midY}" font-size="19" fill="${BOARD_LINE_COLOR}" font-weight="700" text-anchor="middle">漢 界</text>`;
     svgEl.innerHTML = svg;
   }
   drawGridLines();
@@ -681,6 +693,54 @@
   let unsubscribeRoom = null; // Firestore 即時監聽的取消函式
   let busy = false;       // 避免同一時間重複寫入
   let pendingMoveAnim = null; // {r1,c1,r2,c2}：下一次 renderGame() 要播放滑動動畫的起訖格子(棋盤座標)
+
+  /* ---------- 音效：用 Web Audio API 即時合成，不需要額外音檔 ---------- */
+  let audioCtx = null;
+  function getAudioCtx(){
+    try{
+      if(!audioCtx){
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        if(!Ctx) return null;
+        audioCtx = new Ctx();
+      }
+      if(audioCtx.state === 'suspended') audioCtx.resume();
+      return audioCtx;
+    } catch(e){ return null; }
+  }
+  // 瀏覽器通常要求「使用者先手動點過一下」才允許播放音效，所以在頁面上第一次
+  // 點擊時就先把 AudioContext 建立/喚醒起來，之後下棋才能順利發出聲音
+  document.addEventListener('click', () => getAudioCtx(), { once:true });
+
+  function playTone(freq, duration, type, gainPeak, delay){
+    const ctx = getAudioCtx();
+    if(!ctx) return;
+    const t0 = ctx.currentTime + (delay || 0);
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = type || 'triangle';
+    osc.frequency.setValueAtTime(freq, t0);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(gainPeak, t0 + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + duration);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + duration + 0.03);
+  }
+
+  function playMoveSound(){
+    // 一般走子：短促的單一「叩」聲
+    playTone(560, 0.09, 'triangle', 0.10, 0);
+  }
+  function playCaptureSound(){
+    // 吃子：低沉一點、帶兩段的「喀」聲，聽起來更有重量感
+    playTone(320, 0.08, 'square', 0.11, 0);
+    playTone(190, 0.14, 'square', 0.09, 0.05);
+  }
+  function playMoveOrCaptureSound(isCapture){
+    try{ isCapture ? playCaptureSound() : playMoveSound(); }
+    catch(e){ /* 音效播放失敗不影響下棋本身 */ }
+  }
 
   function seatLabel(s){
     if(s==='red') return '紅方';
@@ -728,7 +788,11 @@
 
   function applyRoomToLocal(room){
     const diff = findMoveDiff(board, room.board);
-    if(diff) pendingMoveAnim = diff;
+    if(diff){
+      pendingMoveAnim = diff;
+      const wasCapture = board[diff.r2][diff.c2] !== '';
+      playMoveOrCaptureSound(wasCapture);
+    }
     board = room.board;
     turn = room.turn;
     gameOver = room.gameOver;
@@ -912,11 +976,11 @@
   function renderDrawBanner(){
     const isPlayer = (mySeat === 'red' || mySeat === 'black');
     if(gameOver || !isPlayer || !drawOfferBy){
-      drawBannerEl.style.display = 'none';
+      drawBannerOverlayEl.style.display = 'none';
       drawBannerEl.innerHTML = '';
       return;
     }
-    drawBannerEl.style.display = 'flex';
+    drawBannerOverlayEl.style.display = 'flex';
     if(drawOfferBy === mySeat){
       drawBannerEl.innerHTML = '';
       const p = document.createElement('div');
@@ -993,6 +1057,7 @@
   async function makeMove(sr,sc,tr,tc){
     busy = true;
     pendingMoveAnim = { r1: sr, c1: sc, r2: tr, c2: tc };
+    playMoveOrCaptureSound(board[tr][tc] !== '');
     const nb = cloneBoard(board);
     nb[tr][tc] = nb[sr][sc];
     nb[sr][sc] = '';
