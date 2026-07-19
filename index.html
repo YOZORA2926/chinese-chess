@@ -590,10 +590,33 @@
   }
   renderCoordLabels(false);
 
+  const BOARD_LINE_COLOR = '#878787'; // 棋盤格線／定位十字的顏色
+
+  // 畫「士／卒／砲／兵」出發點旁邊的定位十字（傳統棋盤上常見的那種小直角標記）。
+  // 在邊線（第1、9路）上因為外側沒有格子，只畫靠棋盤內側那一半。
+  function crossMarkSvg(cx0, cy0, hasLeft, hasRight){
+    const g = 5, len = 9;
+    const seg = (x1,y1,x2,y2) => `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${BOARD_LINE_COLOR}" stroke-width="1.5" stroke-linecap="round"/>`;
+    let s = '';
+    if(hasLeft){
+      s += seg(cx0-g, cy0-g, cx0-g-len, cy0-g);
+      s += seg(cx0-g, cy0-g, cx0-g, cy0-g-len);
+      s += seg(cx0-g, cy0+g, cx0-g-len, cy0+g);
+      s += seg(cx0-g, cy0+g, cx0-g, cy0+g+len);
+    }
+    if(hasRight){
+      s += seg(cx0+g, cy0-g, cx0+g+len, cy0-g);
+      s += seg(cx0+g, cy0-g, cx0+g, cy0-g-len);
+      s += seg(cx0+g, cy0+g, cx0+g+len, cy0+g);
+      s += seg(cx0+g, cy0+g, cx0+g, cy0+g+len);
+    }
+    return s;
+  }
+
   function drawGridLines(){
     const cx = c => c*CELL + CELL/2;
     const cy = r => r*CELL + CELL/2;
-    const s = 'stroke="#8a5a35" stroke-width="1.5" stroke-linecap="round"';
+    const s = `stroke="${BOARD_LINE_COLOR}" stroke-width="1.5" stroke-linecap="round"`;
     let svg = '';
     for(let r=0;r<ROWS;r++){
       svg += `<line x1="${cx(0)}" y1="${cy(r)}" x2="${cx(COLS-1)}" y2="${cy(r)}" ${s}/>`;
@@ -610,6 +633,17 @@
     svg += `<line x1="${cx(5)}" y1="${cy(0)}" x2="${cx(3)}" y2="${cy(2)}" ${s}/>`;
     svg += `<line x1="${cx(3)}" y1="${cy(7)}" x2="${cx(5)}" y2="${cy(9)}" ${s}/>`;
     svg += `<line x1="${cx(5)}" y1="${cy(7)}" x2="${cx(3)}" y2="${cy(9)}" ${s}/>`;
+
+    // 砲位（第3、8列，第2、8路）與兵／卒位（第4、7列，第1/3/5/7/9路）的定位十字
+    const markerPoints = [
+      [2,1],[2,7],[7,1],[7,7],
+      [3,0],[3,2],[3,4],[3,6],[3,8],
+      [6,0],[6,2],[6,4],[6,6],[6,8]
+    ];
+    for(const [r,c] of markerPoints){
+      svg += crossMarkSvg(cx(c), cy(r), c>0, c<COLS-1);
+    }
+
     const midY = (cy(4)+cy(5))/2 + 6;
     svg += `<text x="${cx(1)+8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">楚 河</text>`;
     svg += `<text x="${cx(7)-8}" y="${midY}" font-size="19" fill="#8a5a35" font-weight="700" text-anchor="middle">漢 界</text>`;
@@ -646,6 +680,7 @@
   let selected = null;
   let unsubscribeRoom = null; // Firestore 即時監聽的取消函式
   let busy = false;       // 避免同一時間重複寫入
+  let pendingMoveAnim = null; // {r1,c1,r2,c2}：下一次 renderGame() 要播放滑動動畫的起訖格子(棋盤座標)
 
   function seatLabel(s){
     if(s==='red') return '紅方';
@@ -653,7 +688,47 @@
     return '－';
   }
 
+  // 比較舊盤面與新盤面，找出唯一一步棋的起點/終點（差異剛好兩格時才算，
+  // 開新局／悔棋這種整盤大改的情況會回傳 null，動畫就不會誤觸發）
+  function findMoveDiff(oldBoard, newBoard){
+    const diffs = [];
+    for(let r=0;r<ROWS;r++){
+      for(let c=0;c<COLS;c++){
+        if(oldBoard[r][c] !== newBoard[r][c]) diffs.push([r,c]);
+      }
+    }
+    if(diffs.length !== 2) return null;
+    const [a,b] = diffs;
+    const aNowEmpty = newBoard[a[0]][a[1]] === '';
+    const from = aNowEmpty ? a : b;
+    const to = aNowEmpty ? b : a;
+    if(newBoard[to[0]][to[1]] === '') return null; // 兩格都變空，不像是單純的一步棋
+    return { r1: from[0], c1: from[1], r2: to[0], c2: to[1] };
+  }
+
+  // 讓剛剛移動到 (toR,toC) 的棋子，從 (fromR,fromC) 的位置滑過來
+  function animateMove(el, fromR, fromC, toR, toC, flipped){
+    const fromDR = flipped ? (ROWS-1-fromR) : fromR;
+    const fromDC = flipped ? (COLS-1-fromC) : fromC;
+    const toDR = flipped ? (ROWS-1-toR) : toR;
+    const toDC = flipped ? (COLS-1-toC) : toC;
+    const dx = (fromDC - toDC) * CELL;
+    const dy = (fromDR - toDR) * CELL;
+    if(dx === 0 && dy === 0) return;
+    el.style.transition = 'none';
+    el.style.transform = `translate(${dx}px, ${dy}px)`;
+    void el.offsetWidth; // 強制 reflow，確保上面的起始位置先被畫出來
+    el.style.transition = 'transform 0.22s ease';
+    el.style.transform = 'translate(0px, 0px)';
+    el.addEventListener('transitionend', () => {
+      el.style.transition = '';
+      el.style.transform = '';
+    }, { once: true });
+  }
+
   function applyRoomToLocal(room){
+    const diff = findMoveDiff(board, room.board);
+    if(diff) pendingMoveAnim = diff;
     board = room.board;
     turn = room.turn;
     gameOver = room.gameOver;
@@ -818,6 +893,11 @@
           piece.addEventListener('click', (e) => { e.stopPropagation(); onCellClick(r,c); });
           cell.appendChild(piece);
           if(isTarget) cell.classList.add('capture-target');
+
+          if(pendingMoveAnim && pendingMoveAnim.r2 === r && pendingMoveAnim.c2 === c){
+            animateMove(piece, pendingMoveAnim.r1, pendingMoveAnim.c1, r, c, flipped);
+            pendingMoveAnim = null;
+          }
         } else if(isTarget){
           const dot = document.createElement('div');
           dot.className = 'dot';
@@ -912,6 +992,7 @@
 
   async function makeMove(sr,sc,tr,tc){
     busy = true;
+    pendingMoveAnim = { r1: sr, c1: sc, r2: tr, c2: tc };
     const nb = cloneBoard(board);
     nb[tr][tc] = nb[sr][sc];
     nb[sr][sc] = '';
