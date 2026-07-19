@@ -27,7 +27,7 @@
     align-items:center;
     justify-content:center;
     gap:14px;
-    background: radial-gradient(circle at 50% 0%, #3d2b1f, #1c130c 70%);
+    background: linear-gradient(to right, #1e1e1e 0%, #383632 50%, #1e1e1e 100%);
     font-family:'DFKai-SB','BiauKai','標楷體','KaiTi','STKaiti',serif;
     padding:16px;
     padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px) + 24px);
@@ -630,6 +630,7 @@
     const cy = r => r*CELL + CELL/2;
     const s = `stroke="${BOARD_LINE_COLOR}" stroke-width="1.5" stroke-linecap="round"`;
     let svg = '';
+
     for(let r=0;r<ROWS;r++){
       svg += `<line x1="${cx(0)}" y1="${cy(r)}" x2="${cx(COLS-1)}" y2="${cy(r)}" ${s}/>`;
     }
